@@ -233,6 +233,24 @@ describe('AuthService', () => {
       });
       expect(jwtService.signAsync).not.toHaveBeenCalled();
     });
+
+    it('allows signin when lockUntil is in the past', async () => {
+      usersService.findByEmailWithPassword.mockResolvedValue({
+        id: userId,
+        email,
+        name,
+        passwordHash,
+        tokenVersion: 0,
+        failedLoginAttempts: 0,
+        lockUntil: new Date(Date.now() - 60_000),
+      } as UserDocument);
+
+      const result = await authService.signin({ email, password });
+
+      expect(result.accessToken).toBe('signed-token');
+      expect(usersService.resetLoginFailures).toHaveBeenCalledWith(userId);
+      expect(jwtService.signAsync).toHaveBeenCalled();
+    });
   });
 
   describe('logout', () => {
