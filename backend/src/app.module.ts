@@ -5,11 +5,15 @@ import {
   NestModule,
 } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { APP_GUARD } from '@nestjs/core';
 import { MongooseModule } from '@nestjs/mongoose';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { AuthModule } from './auth/auth.module.js';
+import { LoggerMiddleware } from './common/middleware/logger.middleware.js';
 import configuration from './config/configuration.js';
 import { envValidationSchema } from './config/env.validation.js';
-import { LoggerMiddleware } from './common/middleware/logger.middleware.js';
 import { HealthController } from './health/health.controller.js';
+import { UsersModule } from './users/users.module.js';
 
 @Module({
   imports: [
@@ -18,6 +22,12 @@ import { HealthController } from './health/health.controller.js';
       validationSchema: envValidationSchema,
       load: [configuration],
     }),
+    ThrottlerModule.forRoot([
+      {
+        ttl: 60_000,
+        limit: 100,
+      },
+    ]),
     MongooseModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => {
@@ -38,9 +48,16 @@ import { HealthController } from './health/health.controller.js';
         };
       },
     }),
+    UsersModule,
+    AuthModule,
   ],
   controllers: [HealthController],
-  providers: [],
+  providers: [
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
+  ],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {
