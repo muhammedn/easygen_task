@@ -9,4 +9,6 @@ export const envValidationSchema = Joi.object({
   JWT_SECRET: Joi.string().min(32).required(),
   JWT_EXPIRES_IN: Joi.string().default('1h'),
   CORS_ORIGIN: Joi.string().default('http://localhost:5173'),
+  COOKIE_SECURE: Joi.boolean().truthy('true').falsy('false').optional(),
+  TRUST_PROXY: Joi.boolean().truthy('true').falsy('false').default(false),
 });

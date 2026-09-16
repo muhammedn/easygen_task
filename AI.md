@@ -10,6 +10,7 @@ Work was split into small, reviewable steps:
 2. Users + Auth modules: signup/signin/`/auth/me`, validation, JWT, throttling, global exception filter
 3. Swagger at `/docs` + AuthService unit tests + e2e suite with `mongodb-memory-server`
 4. Frontend (Vite + React 18 + shadcn/ui) plus httpOnly cookie session on the backend
+5. Dockerize: multi-stage API + nginx SPA images, `docker compose up` for mongo/api/web
 
 Between steps: run the app, exercise endpoints, fix what AI got wrong, then continue.
 
@@ -23,6 +24,7 @@ Between steps: run the app, exercise endpoints, fix what AI got wrong, then cont
 - Shared password/name validation constants for FE/BE alignment later
 - Swagger decorators on DTOs/controllers, e2e skeleton with memory server, AuthService unit tests
 - Vite/React scaffold, shadcn components, SignUp/SignIn/Home page layout
+- Multi-stage Dockerfiles, nginx SPA config, compose service wiring
 
 **Hand-adjusted or forced by review**
 
@@ -32,6 +34,7 @@ Between steps: run the app, exercise endpoints, fix what AI got wrong, then cont
 - JWT cookie extractor ordered before bearer; session restore always via `GET /auth/me`; 401 event bus so Axios stays router-agnostic
 - UX polish accepted from AI suggestions: redirect-after-login, public-only routes, password hint, pending submit state, friendly 429/network errors
 - HttpOnly SameSite Secure cookie instead of localStorage — AI first suggested storing the JWT in localStorage. I asked for cookies with httpOnly, SameSite=Strict, and Secure in production instead. That keeps the token out of JavaScript (XSS) and blocks cross-site cookie sends (CSRF mitigation for this API). Frontend never persists accessToken; it relies on withCredentials and session restore via /auth/me
+- Docker: `node:22-bookworm-slim` instead of alpine so `bcrypt` uses prebuilt glibc binaries; nginx `/api` proxy so the cookie stays same-origin; `COOKIE_SECURE` and `TRUST_PROXY` as explicit env flags; `npm ci --omit=dev` so `mongodb-memory-server` never runs in the image
 
 ## Prompts / approaches that worked well
 

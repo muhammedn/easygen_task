@@ -7,7 +7,6 @@ export const ACCESS_TOKEN_COOKIE = 'access_token';
 export function buildCookieOptions(
   configService: ConfigService,
 ): CookieOptions {
-  const nodeEnv = configService.getOrThrow<string>('nodeEnv');
   const jwtExpiresIn = configService.getOrThrow<string>('jwtExpiresIn');
   const maxAge = ms(jwtExpiresIn as StringValue);
 
@@ -18,7 +17,7 @@ export function buildCookieOptions(
   return {
     httpOnly: true,
     sameSite: 'strict',
-    secure: nodeEnv === 'production',
+    secure: configService.getOrThrow<boolean>('cookieSecure'),
     path: '/',
     maxAge,
   };

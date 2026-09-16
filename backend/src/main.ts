@@ -18,6 +18,14 @@ async function bootstrap() {
   const corsOrigin = configService.getOrThrow<AppConfig['corsOrigin']>(
     'corsOrigin',
   );
+  const trustProxy = configService.getOrThrow<boolean>('trustProxy');
+
+  if (trustProxy) {
+    const expressApp = app.getHttpAdapter().getInstance() as {
+      set: (key: string, value: number) => void;
+    };
+    expressApp.set('trust proxy', 1);
+  }
 
   app.use(
     helmet({
