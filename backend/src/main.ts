@@ -53,27 +53,29 @@ async function bootstrap() {
   );
   app.useGlobalFilters(new HttpExceptionFilter());
 
-  const swaggerConfig = new DocumentBuilder()
+  const nodeEnv = configService.getOrThrow<string>('nodeEnv');
+
+  const swaggerBuilder = new DocumentBuilder()
     .setTitle('Auth API')
     .setDescription('Sign up, sign in, and protected user endpoints')
     .setVersion('1.0')
-    .addBearerAuth(
-      {
-        type: 'http',
-        scheme: 'bearer',
-        bearerFormat: 'JWT',
-        description: 'Paste the JWT from signup or signin',
-      },
-      'access-token',
-    )
-    .addCookieAuth(ACCESS_TOKEN_COOKIE)
-    .build();
+    .addCookieAuth(ACCESS_TOKEN_COOKIE);
+
+  if (nodeEnv === 'production') {
+    swaggerBuilder.addServer('/api');
+  }
+
+  const swaggerConfig = swaggerBuilder.build();
   const document = SwaggerModule.createDocument(app, swaggerConfig);
   SwaggerModule.setup('docs', app, document);
 
   await app.listen(port);
   logger.log(`Application listening on http://localhost:${port}`);
-  logger.log(`Swagger docs at http://localhost:${port}/docs`);
+  if (nodeEnv === 'production') {
+    logger.log('Swagger docs at http://localhost:8080/api/docs/ (via nginx)');
+  } else {
+    logger.log(`Swagger docs at http://localhost:${port}/docs`);
+  }
 }
 
 await bootstrap();

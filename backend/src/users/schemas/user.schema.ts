@@ -19,6 +19,15 @@ export class User {
 
   @Prop({ required: true, select: false })
   passwordHash: string;
+
+  @Prop({ required: true, default: 0 })
+  tokenVersion: number;
+
+  @Prop({ required: true, default: 0 })
+  failedLoginAttempts: number;
+
+  @Prop({ type: Date, default: null })
+  lockUntil: Date | null;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

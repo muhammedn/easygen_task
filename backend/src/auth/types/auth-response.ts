@@ -8,4 +8,5 @@ export type AuthResponse = {
 export type JwtPayload = {
   sub: string;
   email: string;
+  tv: number;
 };

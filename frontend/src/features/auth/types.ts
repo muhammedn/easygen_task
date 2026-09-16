@@ -5,7 +5,6 @@ export type PublicUser = {
 };
 
 export type AuthResponse = {
-  accessToken: string;
   user: PublicUser;
 };
 

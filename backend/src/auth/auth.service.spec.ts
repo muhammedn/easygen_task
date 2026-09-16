@@ -1,5 +1,7 @@
 import {
   ConflictException,
+  HttpException,
+  HttpStatus,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
@@ -21,6 +23,9 @@ describe('AuthService', () => {
     findByEmailWithPassword: ReturnType<typeof vi.fn>;
     create: ReturnType<typeof vi.fn>;
     toPublicUser: ReturnType<typeof vi.fn>;
+    recordFailedLogin: ReturnType<typeof vi.fn>;
+    resetLoginFailures: ReturnType<typeof vi.fn>;
+    bumpTokenVersion: ReturnType<typeof vi.fn>;
   };
   let jwtService: {
     signAsync: ReturnType<typeof vi.fn>;
@@ -43,6 +48,9 @@ describe('AuthService', () => {
           name: user.name,
         }),
       ),
+      recordFailedLogin: vi.fn().mockResolvedValue(undefined),
+      resetLoginFailures: vi.fn().mockResolvedValue(undefined),
+      bumpTokenVersion: vi.fn().mockResolvedValue(undefined),
     };
     jwtService = {
       signAsync: vi.fn().mockResolvedValue('signed-token'),
@@ -61,6 +69,9 @@ describe('AuthService', () => {
         email,
         name,
         passwordHash,
+        tokenVersion: 0,
+        failedLoginAttempts: 0,
+        lockUntil: null,
       } as UserDocument;
       usersService.create.mockResolvedValue(created);
 
@@ -87,6 +98,7 @@ describe('AuthService', () => {
       expect(jwtService.signAsync).toHaveBeenCalledWith({
         sub: userId,
         email,
+        tv: 0,
       });
     });
 
@@ -120,6 +132,9 @@ describe('AuthService', () => {
         email,
         name,
         passwordHash,
+        tokenVersion: 2,
+        failedLoginAttempts: 0,
+        lockUntil: null,
       } as UserDocument);
 
       const result = await authService.signin({ email, password });
@@ -131,15 +146,36 @@ describe('AuthService', () => {
       expect(jwtService.signAsync).toHaveBeenCalledWith({
         sub: userId,
         email,
+        tv: 2,
       });
+      expect(usersService.resetLoginFailures).not.toHaveBeenCalled();
     });
 
-    it('throws UnauthorizedException for wrong password', async () => {
+    it('resets login failures after a successful signin', async () => {
       usersService.findByEmailWithPassword.mockResolvedValue({
         id: userId,
         email,
         name,
         passwordHash,
+        tokenVersion: 0,
+        failedLoginAttempts: 2,
+        lockUntil: null,
+      } as UserDocument);
+
+      await authService.signin({ email, password });
+
+      expect(usersService.resetLoginFailures).toHaveBeenCalledWith(userId);
+    });
+
+    it('throws UnauthorizedException for wrong password and records failure', async () => {
+      usersService.findByEmailWithPassword.mockResolvedValue({
+        id: userId,
+        email,
+        name,
+        passwordHash,
+        tokenVersion: 0,
+        failedLoginAttempts: 1,
+        lockUntil: null,
       } as UserDocument);
 
       await expect(
@@ -151,6 +187,11 @@ describe('AuthService', () => {
         );
         return true;
       });
+      expect(usersService.recordFailedLogin).toHaveBeenCalledWith(
+        userId,
+        5,
+        15 * 60 * 1000,
+      );
       expect(jwtService.signAsync).not.toHaveBeenCalled();
     });
 
@@ -167,6 +208,37 @@ describe('AuthService', () => {
         return true;
       });
       expect(jwtService.signAsync).not.toHaveBeenCalled();
+      expect(usersService.recordFailedLogin).not.toHaveBeenCalled();
+    });
+
+    it('throws 429 when the account is locked', async () => {
+      usersService.findByEmailWithPassword.mockResolvedValue({
+        id: userId,
+        email,
+        name,
+        passwordHash,
+        tokenVersion: 0,
+        failedLoginAttempts: 0,
+        lockUntil: new Date(Date.now() + 60_000),
+      } as UserDocument);
+
+      await expect(
+        authService.signin({ email, password }),
+      ).rejects.toSatisfy((error: unknown) => {
+        expect(error).toBeInstanceOf(HttpException);
+        expect((error as HttpException).getStatus()).toBe(
+          HttpStatus.TOO_MANY_REQUESTS,
+        );
+        return true;
+      });
+      expect(jwtService.signAsync).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('logout', () => {
+    it('bumps the token version', async () => {
+      await authService.logout(userId);
+      expect(usersService.bumpTokenVersion).toHaveBeenCalledWith(userId);
     });
   });
 });

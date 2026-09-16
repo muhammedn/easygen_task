@@ -23,18 +23,19 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     private readonly usersService: UsersService,
   ) {
     super({
-      jwtFromRequest: ExtractJwt.fromExtractors([
-        cookieExtractor,
-        ExtractJwt.fromAuthHeaderAsBearerToken(),
-      ]),
+      jwtFromRequest: ExtractJwt.fromExtractors([cookieExtractor]),
       ignoreExpiration: false,
       secretOrKey: configService.getOrThrow<string>('jwtSecret'),
+      algorithms: ['HS256'],
     });
   }
 
   async validate(payload: JwtPayload): Promise<PublicUser> {
     const user = await this.usersService.findById(payload.sub);
     if (!user) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+    if (payload.tv !== user.tokenVersion) {
       throw new UnauthorizedException('Invalid credentials');
     }
     return this.usersService.toPublicUser(user);

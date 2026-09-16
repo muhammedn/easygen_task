@@ -18,6 +18,17 @@ function getSetCookieHeader(res: request.Response): string {
   return typeof raw === 'string' ? raw : '';
 }
 
+function cookieHeaderFromSetCookie(setCookie: string): string {
+  const cookieValue = setCookie
+    .split(',')
+    .flatMap((part) => part.split(';'))
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(`${ACCESS_TOKEN_COOKIE}=`));
+
+  expect(cookieValue).toBeDefined();
+  return cookieValue as string;
+}
+
 describe('Auth (e2e)', () => {
   let app: INestApplication;
   let mongoServer: MongoMemoryServer;
@@ -34,6 +45,8 @@ describe('Auth (e2e)', () => {
     process.env.JWT_SECRET = 'test-jwt-secret-at-least-32-chars!!';
     process.env.JWT_EXPIRES_IN = '1h';
     process.env.CORS_ORIGIN = 'http://localhost:5173';
+    process.env.COOKIE_SECURE = 'false';
+    process.env.TRUST_PROXY = 'false';
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
@@ -70,13 +83,13 @@ describe('Auth (e2e)', () => {
     expect(res.body.uptime).toBeDefined();
   });
 
-  it('signup → signin → /auth/me with bearer and cookie', async () => {
+  it('signup → signin → /auth/me with cookie only', async () => {
     const signupRes = await request(app.getHttpServer())
       .post('/auth/signup')
       .send({ email, name, password })
       .expect(201);
 
-    expect(signupRes.body.accessToken).toBeDefined();
+    expect(signupRes.body.accessToken).toBeUndefined();
     expect(signupRes.body.user).toEqual(
       expect.objectContaining({ email, name }),
     );
@@ -93,7 +106,7 @@ describe('Auth (e2e)', () => {
       .send({ email, password })
       .expect(200);
 
-    expect(signinRes.body.accessToken).toBeDefined();
+    expect(signinRes.body.accessToken).toBeUndefined();
     expect(signinRes.body.user.passwordHash).toBeUndefined();
 
     const setCookie = getSetCookieHeader(signinRes);
@@ -102,22 +115,16 @@ describe('Auth (e2e)', () => {
     expect(setCookie.toLowerCase()).toContain('samesite=strict');
     expect(setCookie.toLowerCase()).not.toContain('secure');
 
+    const cookieValue = cookieHeaderFromSetCookie(setCookie);
+
     await request(app.getHttpServer())
       .get('/auth/me')
-      .set('Authorization', `Bearer ${signinRes.body.accessToken}`)
-      .expect(200);
-
-    const cookieValue = setCookie
-      .split(',')
-      .flatMap((part) => part.split(';'))
-      .map((part) => part.trim())
-      .find((part) => part.startsWith(`${ACCESS_TOKEN_COOKIE}=`));
-
-    expect(cookieValue).toBeDefined();
+      .set('Authorization', `Bearer ${cookieValue.split('=')[1]}`)
+      .expect(401);
 
     const meViaCookie = await request(app.getHttpServer())
       .get('/auth/me')
-      .set('Cookie', cookieValue as string)
+      .set('Cookie', cookieValue)
       .expect(200);
 
     expect(meViaCookie.body.user).toEqual(
@@ -155,22 +162,48 @@ describe('Auth (e2e)', () => {
       .expect(409);
   });
 
-  it('POST /auth/logout clears the auth cookie', async () => {
+  it('POST /auth/logout revokes the cookie session', async () => {
     const signinRes = await request(app.getHttpServer())
       .post('/auth/signin')
       .send({ email, password })
       .expect(200);
 
+    const cookieValue = cookieHeaderFromSetCookie(
+      getSetCookieHeader(signinRes),
+    );
+
     const logoutRes = await request(app.getHttpServer())
       .post('/auth/logout')
+      .set('Cookie', cookieValue)
       .expect(204);
 
     const cleared = getSetCookieHeader(logoutRes);
     expect(cleared).toContain(`${ACCESS_TOKEN_COOKIE}=`);
     expect(cleared.toLowerCase()).toMatch(/max-age=0|expires=/i);
 
-    // Cookie was cleared in the response; body token from earlier signin still works
-    // as a bearer (stateless JWT), which is expected.
-    expect(signinRes.body.accessToken).toBeDefined();
+    await request(app.getHttpServer())
+      .get('/auth/me')
+      .set('Cookie', cookieValue)
+      .expect(401);
+  });
+
+  it('locks the account after 5 failed signins', async () => {
+    const lockEmail = `lock_${Date.now()}@example.com`;
+    await request(app.getHttpServer())
+      .post('/auth/signup')
+      .send({ email: lockEmail, name, password })
+      .expect(201);
+
+    for (let i = 0; i < 5; i += 1) {
+      await request(app.getHttpServer())
+        .post('/auth/signin')
+        .send({ email: lockEmail, password: 'Wrong1!' })
+        .expect(401);
+    }
+
+    await request(app.getHttpServer())
+      .post('/auth/signin')
+      .send({ email: lockEmail, password })
+      .expect(429);
   });
 });

@@ -11,7 +11,6 @@ import {
 import { ConfigService } from '@nestjs/config';
 import {
   ApiBadRequestResponse,
-  ApiBearerAuth,
   ApiConflictResponse,
   ApiCookieAuth,
   ApiCreatedResponse,
@@ -52,10 +51,10 @@ export class AuthController {
   async signup(
     @Body() dto: SignUpDto,
     @Res({ passthrough: true }) res: Response,
-  ) {
+  ): Promise<AuthResponseDto> {
     const result = await this.authService.signup(dto);
     setAuthCookie(res, result.accessToken, this.configService);
-    return result;
+    return { user: result.user };
   }
 
   @Post('signin')
@@ -69,23 +68,29 @@ export class AuthController {
   async signin(
     @Body() dto: SignInDto,
     @Res({ passthrough: true }) res: Response,
-  ) {
+  ): Promise<AuthResponseDto> {
     const result = await this.authService.signin(dto);
     setAuthCookie(res, result.accessToken, this.configService);
-    return result;
+    return { user: result.user };
   }
 
   @Post('logout')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({ summary: 'Clear the auth cookie' })
-  @ApiNoContentResponse({ description: 'Cookie cleared' })
-  logout(@Res({ passthrough: true }) res: Response): void {
+  @UseGuards(JwtAuthGuard)
+  @ApiCookieAuth('access_token')
+  @ApiOperation({ summary: 'Revoke the session and clear the auth cookie' })
+  @ApiNoContentResponse({ description: 'Cookie cleared and token revoked' })
+  @ApiUnauthorizedResponse({ description: 'Missing or invalid token' })
+  async logout(
+    @CurrentUser() user: PublicUser,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<void> {
+    await this.authService.logout(user.id);
     clearAuthCookie(res, this.configService);
   }
 
   @Get('me')
   @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth('access-token')
   @ApiCookieAuth('access_token')
   @ApiOperation({ summary: 'Get the current authenticated user' })
   @ApiOkResponse({

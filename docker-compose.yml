@@ -2,8 +2,9 @@ services:
   mongo:
     image: mongo:7
     container_name: easygen-mongo
-    ports:
-      - '27017:27017'
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-easygen}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-local-dev-only-mongo-password}
     volumes:
       - mongo_data:/data/db
     healthcheck:
@@ -23,14 +24,12 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3000
-      MONGODB_URI: mongodb://mongo:27017/easygen
+      MONGODB_URI: mongodb://${MONGO_USER:-easygen}:${MONGO_PASSWORD:-local-dev-only-mongo-password}@mongo:27017/easygen?authSource=admin
       JWT_SECRET: ${JWT_SECRET:-local-dev-only-secret-change-me-32chars!!}
       JWT_EXPIRES_IN: 1h
       CORS_ORIGIN: http://localhost:8080
       COOKIE_SECURE: 'false'
       TRUST_PROXY: 'true'
-    ports:
-      - '3000:3000'
     restart: unless-stopped
     healthcheck:
       test:
