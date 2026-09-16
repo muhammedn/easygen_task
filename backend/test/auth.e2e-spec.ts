@@ -1,0 +1,121 @@
+import { ValidationPipe } from '@nestjs/common';
+import { Test, TestingModule } from '@nestjs/testing';
+import { INestApplication } from '@nestjs/common';
+import { MongoMemoryServer } from 'mongodb-memory-server';
+import request from 'supertest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { AppModule } from '../src/app.module.js';
+import { HttpExceptionFilter } from '../src/common/filters/http-exception.filter.js';
+import { PASSWORD_REQUIREMENTS_MESSAGE } from '../src/common/constants/validation.js';
+
+describe('Auth (e2e)', () => {
+  let app: INestApplication;
+  let mongoServer: MongoMemoryServer;
+  const password = 'Secret1!';
+  const name = 'Test User';
+  let email: string;
+
+  beforeAll(async () => {
+    mongoServer = await MongoMemoryServer.create();
+
+    process.env.NODE_ENV = 'test';
+    process.env.PORT = '3001';
+    process.env.MONGODB_URI = mongoServer.getUri();
+    process.env.JWT_SECRET = 'test-jwt-secret-at-least-32-chars!!';
+    process.env.JWT_EXPIRES_IN = '1h';
+    process.env.CORS_ORIGIN = 'http://localhost:5173';
+
+    const moduleFixture: TestingModule = await Test.createTestingModule({
+      imports: [AppModule],
+    }).compile();
+
+    app = moduleFixture.createNestApplication();
+    app.useGlobalPipes(
+      new ValidationPipe({
+        whitelist: true,
+        forbidNonWhitelisted: true,
+        transform: true,
+      }),
+    );
+    app.useGlobalFilters(new HttpExceptionFilter());
+    await app.init();
+
+    email = `user_${Date.now()}@example.com`;
+  }, 300_000);
+
+  afterAll(async () => {
+    if (app) {
+      await app.close();
+    }
+    if (mongoServer) {
+      await mongoServer.stop();
+    }
+  });
+
+  it('GET /health returns ok', async () => {
+    const res = await request(app.getHttpServer()).get('/health').expect(200);
+    expect(res.body.status).toBe('ok');
+    expect(res.body.timestamp).toBeDefined();
+    expect(res.body.uptime).toBeDefined();
+  });
+
+  it('signup → signin → /auth/me with a valid token', async () => {
+    const signupRes = await request(app.getHttpServer())
+      .post('/auth/signup')
+      .send({ email, name, password })
+      .expect(201);
+
+    expect(signupRes.body.accessToken).toBeDefined();
+    expect(signupRes.body.user).toEqual(
+      expect.objectContaining({ email, name }),
+    );
+    expect(signupRes.body.user.passwordHash).toBeUndefined();
+
+    const signinRes = await request(app.getHttpServer())
+      .post('/auth/signin')
+      .send({ email, password })
+      .expect(200);
+
+    expect(signinRes.body.accessToken).toBeDefined();
+    expect(signinRes.body.user.passwordHash).toBeUndefined();
+
+    const meRes = await request(app.getHttpServer())
+      .get('/auth/me')
+      .set('Authorization', `Bearer ${signinRes.body.accessToken}`)
+      .expect(200);
+
+    expect(meRes.body.user).toEqual(
+      expect.objectContaining({ email, name }),
+    );
+    expect(meRes.body.user.passwordHash).toBeUndefined();
+  });
+
+  it('GET /auth/me without a token returns 401', async () => {
+    await request(app.getHttpServer()).get('/auth/me').expect(401);
+  });
+
+  it('rejects weak password on signup', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/auth/signup')
+      .send({
+        email: `weak_${Date.now()}@example.com`,
+        name,
+        password: 'short',
+      })
+      .expect(400);
+
+    expect(Array.isArray(res.body.message)).toBe(true);
+    expect(res.body.message).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining(PASSWORD_REQUIREMENTS_MESSAGE),
+      ]),
+    );
+  });
+
+  it('returns 409 on duplicate signup', async () => {
+    await request(app.getHttpServer())
+      .post('/auth/signup')
+      .send({ email, name, password })
+      .expect(409);
+  });
+});
