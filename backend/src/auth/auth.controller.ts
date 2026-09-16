@@ -5,13 +5,17 @@ import {
   HttpCode,
   HttpStatus,
   Post,
+  Res,
   UseGuards,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
   ApiConflictResponse,
+  ApiCookieAuth,
   ApiCreatedResponse,
+  ApiNoContentResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
@@ -19,7 +23,9 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
+import type { Response } from 'express';
 import type { PublicUser } from '../users/types/public-user.js';
+import { clearAuthCookie, setAuthCookie } from './auth-cookie.js';
 import { AuthService } from './auth.service.js';
 import { CurrentUser } from './decorators/current-user.decorator.js';
 import { AuthResponseDto } from './dto/auth-response.dto.js';
@@ -31,7 +37,10 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard.js';
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly configService: ConfigService,
+  ) {}
 
   @Post('signup')
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
@@ -40,8 +49,13 @@ export class AuthController {
   @ApiBadRequestResponse({ description: 'Validation failed' })
   @ApiConflictResponse({ description: 'Email already in use' })
   @ApiTooManyRequestsResponse({ description: 'Rate limit exceeded' })
-  signup(@Body() dto: SignUpDto) {
-    return this.authService.signup(dto);
+  async signup(
+    @Body() dto: SignUpDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await this.authService.signup(dto);
+    setAuthCookie(res, result.accessToken, this.configService);
+    return result;
   }
 
   @Post('signin')
@@ -52,13 +66,27 @@ export class AuthController {
   @ApiBadRequestResponse({ description: 'Validation failed' })
   @ApiUnauthorizedResponse({ description: 'Invalid credentials' })
   @ApiTooManyRequestsResponse({ description: 'Rate limit exceeded' })
-  signin(@Body() dto: SignInDto) {
-    return this.authService.signin(dto);
+  async signin(
+    @Body() dto: SignInDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await this.authService.signin(dto);
+    setAuthCookie(res, result.accessToken, this.configService);
+    return result;
+  }
+
+  @Post('logout')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Clear the auth cookie' })
+  @ApiNoContentResponse({ description: 'Cookie cleared' })
+  logout(@Res({ passthrough: true }) res: Response): void {
+    clearAuthCookie(res, this.configService);
   }
 
   @Get('me')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('access-token')
+  @ApiCookieAuth('access_token')
   @ApiOperation({ summary: 'Get the current authenticated user' })
   @ApiOkResponse({
     schema: {

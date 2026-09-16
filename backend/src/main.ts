@@ -2,10 +2,12 @@ import { Logger, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import { AppModule } from './app.module.js';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter.js';
 import type { AppConfig } from './config/configuration.js';
+import { ACCESS_TOKEN_COOKIE } from './auth/auth-cookie.js';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -29,6 +31,7 @@ async function bootstrap() {
       },
     }),
   );
+  app.use(cookieParser());
   app.enableCors({
     origin: corsOrigin,
     credentials: true,
@@ -55,6 +58,7 @@ async function bootstrap() {
       },
       'access-token',
     )
+    .addCookieAuth(ACCESS_TOKEN_COOKIE)
     .build();
   const document = SwaggerModule.createDocument(app, swaggerConfig);
   SwaggerModule.setup('docs', app, document);

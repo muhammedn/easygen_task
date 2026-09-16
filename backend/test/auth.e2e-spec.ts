@@ -1,12 +1,22 @@
 import { ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
+import cookieParser from 'cookie-parser';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AppModule } from '../src/app.module.js';
+import { ACCESS_TOKEN_COOKIE } from '../src/auth/auth-cookie.js';
 import { HttpExceptionFilter } from '../src/common/filters/http-exception.filter.js';
 import { PASSWORD_REQUIREMENTS_MESSAGE } from '../src/common/constants/validation.js';
+
+function getSetCookieHeader(res: request.Response): string {
+  const raw = res.headers['set-cookie'];
+  if (Array.isArray(raw)) {
+    return raw.join(';');
+  }
+  return typeof raw === 'string' ? raw : '';
+}
 
 describe('Auth (e2e)', () => {
   let app: INestApplication;
@@ -30,6 +40,7 @@ describe('Auth (e2e)', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
+    app.use(cookieParser());
     app.useGlobalPipes(
       new ValidationPipe({
         whitelist: true,
@@ -59,7 +70,7 @@ describe('Auth (e2e)', () => {
     expect(res.body.uptime).toBeDefined();
   });
 
-  it('signup → signin → /auth/me with a valid token', async () => {
+  it('signup → signin → /auth/me with bearer and cookie', async () => {
     const signupRes = await request(app.getHttpServer())
       .post('/auth/signup')
       .send({ email, name, password })
@@ -71,6 +82,12 @@ describe('Auth (e2e)', () => {
     );
     expect(signupRes.body.user.passwordHash).toBeUndefined();
 
+    const signupCookie = getSetCookieHeader(signupRes);
+    expect(signupCookie).toContain(`${ACCESS_TOKEN_COOKIE}=`);
+    expect(signupCookie.toLowerCase()).toContain('httponly');
+    expect(signupCookie.toLowerCase()).toContain('samesite=strict');
+    expect(signupCookie.toLowerCase()).not.toContain('secure');
+
     const signinRes = await request(app.getHttpServer())
       .post('/auth/signin')
       .send({ email, password })
@@ -79,15 +96,34 @@ describe('Auth (e2e)', () => {
     expect(signinRes.body.accessToken).toBeDefined();
     expect(signinRes.body.user.passwordHash).toBeUndefined();
 
-    const meRes = await request(app.getHttpServer())
+    const setCookie = getSetCookieHeader(signinRes);
+    expect(setCookie).toContain(`${ACCESS_TOKEN_COOKIE}=`);
+    expect(setCookie.toLowerCase()).toContain('httponly');
+    expect(setCookie.toLowerCase()).toContain('samesite=strict');
+    expect(setCookie.toLowerCase()).not.toContain('secure');
+
+    await request(app.getHttpServer())
       .get('/auth/me')
       .set('Authorization', `Bearer ${signinRes.body.accessToken}`)
       .expect(200);
 
-    expect(meRes.body.user).toEqual(
+    const cookieValue = setCookie
+      .split(',')
+      .flatMap((part) => part.split(';'))
+      .map((part) => part.trim())
+      .find((part) => part.startsWith(`${ACCESS_TOKEN_COOKIE}=`));
+
+    expect(cookieValue).toBeDefined();
+
+    const meViaCookie = await request(app.getHttpServer())
+      .get('/auth/me')
+      .set('Cookie', cookieValue as string)
+      .expect(200);
+
+    expect(meViaCookie.body.user).toEqual(
       expect.objectContaining({ email, name }),
     );
-    expect(meRes.body.user.passwordHash).toBeUndefined();
+    expect(meViaCookie.body.user.passwordHash).toBeUndefined();
   });
 
   it('GET /auth/me without a token returns 401', async () => {
@@ -117,5 +153,24 @@ describe('Auth (e2e)', () => {
       .post('/auth/signup')
       .send({ email, name, password })
       .expect(409);
+  });
+
+  it('POST /auth/logout clears the auth cookie', async () => {
+    const signinRes = await request(app.getHttpServer())
+      .post('/auth/signin')
+      .send({ email, password })
+      .expect(200);
+
+    const logoutRes = await request(app.getHttpServer())
+      .post('/auth/logout')
+      .expect(204);
+
+    const cleared = getSetCookieHeader(logoutRes);
+    expect(cleared).toContain(`${ACCESS_TOKEN_COOKIE}=`);
+    expect(cleared.toLowerCase()).toMatch(/max-age=0|expires=/i);
+
+    // Cookie was cleared in the response; body token from earlier signin still works
+    // as a bearer (stateless JWT), which is expected.
+    expect(signinRes.body.accessToken).toBeDefined();
   });
 });
