@@ -5,6 +5,9 @@ services:
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-easygen}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-local-dev-only-mongo-password}
+    ports:
+      # Host-only for local `npm run start:dev` (27018 avoids clash with a local mongod on 27017).
+      - '127.0.0.1:27018:27017'
     volumes:
       - mongo_data:/data/db
     healthcheck:

@@ -1,4 +1,5 @@
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
+import { AuthShell } from '@/components/AuthShell';
 import { useAuth } from '@/features/auth/useAuth';
 
 export function ProtectedRoute() {
@@ -7,9 +8,7 @@ export function ProtectedRoute() {
 
   if (status === 'loading') {
     return (
-      <div className="flex min-h-svh items-center justify-center text-muted-foreground">
-        Loading...
-      </div>
+      <AuthShell loading loadingLabel="Checking session…" />
     );
   }
 

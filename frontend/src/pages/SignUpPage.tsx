@@ -3,15 +3,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { AuthShell } from '@/components/AuthShell';
 import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAuth } from '@/features/auth/useAuth';
@@ -51,78 +44,91 @@ export function SignUpPage() {
   });
 
   return (
-    <div className="flex min-h-svh items-center justify-center bg-muted/30 px-4">
-      <Card className="w-full max-w-md">
-        <CardHeader>
-          <CardTitle>Create an account</CardTitle>
-          <CardDescription>
-            Sign up to access the application.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form className="space-y-4" onSubmit={onSubmit} noValidate>
-            {serverError ? (
-              <Alert variant="destructive">
-                <AlertDescription>{serverError}</AlertDescription>
-              </Alert>
+    <AuthShell>
+      <div className="rounded-2xl border border-border/80 bg-card px-6 py-7 shadow-none backdrop-blur-sm sm:px-8">
+        <div className="mb-6 space-y-1">
+          <h1 className="font-heading text-2xl font-semibold tracking-tight text-foreground">
+            Create your account
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            Email, name, and a strong password — that&apos;s all we need.
+          </p>
+        </div>
+
+        <form className="space-y-5" onSubmit={onSubmit} noValidate>
+          {serverError ? (
+            <Alert variant="destructive">
+              <AlertDescription>{serverError}</AlertDescription>
+            </Alert>
+          ) : null}
+
+          <div className="space-y-2">
+            <Label htmlFor="email">Email</Label>
+            <Input
+              id="email"
+              type="email"
+              autoComplete="email"
+              className="h-11 bg-background/70"
+              {...register('email')}
+            />
+            {errors.email ? (
+              <p className="text-sm text-destructive">{errors.email.message}</p>
             ) : null}
+          </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                autoComplete="email"
-                {...register('email')}
-              />
-              {errors.email ? (
-                <p className="text-sm text-destructive">{errors.email.message}</p>
-              ) : null}
-            </div>
+          <div className="space-y-2">
+            <Label htmlFor="name">Name</Label>
+            <Input
+              id="name"
+              type="text"
+              autoComplete="name"
+              className="h-11 bg-background/70"
+              {...register('name')}
+            />
+            {errors.name ? (
+              <p className="text-sm text-destructive">{errors.name.message}</p>
+            ) : null}
+          </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="name">Name</Label>
-              <Input
-                id="name"
-                type="text"
-                autoComplete="name"
-                {...register('name')}
-              />
-              {errors.name ? (
-                <p className="text-sm text-destructive">{errors.name.message}</p>
-              ) : null}
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                autoComplete="new-password"
-                {...register('password')}
-              />
-              <p className="text-sm text-muted-foreground">
-                {PASSWORD_REQUIREMENTS_MESSAGE}
+          <div className="space-y-2">
+            <Label htmlFor="password">Password</Label>
+            <Input
+              id="password"
+              type="password"
+              autoComplete="new-password"
+              className="h-11 bg-background/70"
+              {...register('password')}
+            />
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              {PASSWORD_REQUIREMENTS_MESSAGE}
+            </p>
+            {errors.password ? (
+              <p className="text-sm text-destructive">
+                {errors.password.message}
               </p>
-              {errors.password ? (
-                <p className="text-sm text-destructive">
-                  {errors.password.message}
-                </p>
-              ) : null}
-            </div>
+            ) : null}
+          </div>
 
-            <Button type="submit" className="w-full" disabled={isSubmitting}>
-              {isSubmitting ? 'Creating account...' : 'Sign up'}
-            </Button>
-          </form>
-        </CardContent>
-        <CardFooter className="justify-center text-sm text-muted-foreground">
+          <Button
+            type="submit"
+            size="lg"
+            className="h-11 w-full active:scale-[0.98]"
+            disabled={isSubmitting}
+          >
+            {isSubmitting ? 'Creating account...' : 'Sign up'}
+          </Button>
+        </form>
+
+        <p className="mt-6 text-center text-sm text-muted-foreground">
           Already have an account?{' '}
-          <Link to="/signin" className="ml-1 font-medium text-foreground underline-offset-4 hover:underline">
+          <Link
+            to="/signin"
+            className="font-medium text-primary underline-offset-4 hover:underline"
+          >
             Sign in
           </Link>
-        </CardFooter>
-      </Card>
-    </div>
+        </p>
+      </div>
+    </AuthShell>
   );
 }

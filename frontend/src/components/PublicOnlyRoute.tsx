@@ -1,4 +1,5 @@
 import { Navigate, Outlet } from 'react-router-dom';
+import { AuthShell } from '@/components/AuthShell';
 import { useAuth } from '@/features/auth/useAuth';
 
 export function PublicOnlyRoute() {
@@ -6,9 +7,7 @@ export function PublicOnlyRoute() {
 
   if (status === 'loading') {
     return (
-      <div className="flex min-h-svh items-center justify-center text-muted-foreground">
-        Loading...
-      </div>
+      <AuthShell loading loadingLabel="Checking session…" />
     );
   }
 

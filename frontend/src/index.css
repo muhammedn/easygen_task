@@ -1,13 +1,16 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
-@import "@fontsource-variable/geist";
+@import "@fontsource/fraunces/400.css";
+@import "@fontsource/fraunces/600.css";
+@import "@fontsource/fraunces/700.css";
+@import "@fontsource-variable/source-sans-3";
 
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-    --font-heading: var(--font-sans);
-    --font-sans: 'Geist Variable', sans-serif;
+    --font-heading: "Fraunces", ui-serif, Georgia, serif;
+    --font-sans: "Source Sans 3 Variable", "Source Sans 3", ui-sans-serif, system-ui, sans-serif;
     --color-sidebar-ring: var(--sidebar-ring);
     --color-sidebar-border: var(--sidebar-border);
     --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -49,82 +52,100 @@
 }
 
 :root {
-    --background: oklch(1 0 0);
-    --foreground: oklch(0.145 0 0);
-    --card: oklch(1 0 0);
-    --card-foreground: oklch(0.145 0 0);
-    --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.145 0 0);
-    --primary: oklch(0.205 0 0);
-    --primary-foreground: oklch(0.985 0 0);
-    --secondary: oklch(0.97 0 0);
-    --secondary-foreground: oklch(0.205 0 0);
-    --muted: oklch(0.97 0 0);
-    --muted-foreground: oklch(0.556 0 0);
-    --accent: oklch(0.97 0 0);
-    --accent-foreground: oklch(0.205 0 0);
-    --destructive: oklch(0.577 0.245 27.325);
-    --border: oklch(0.922 0 0);
-    --input: oklch(0.922 0 0);
-    --ring: oklch(0.708 0 0);
-    --chart-1: oklch(0.87 0 0);
-    --chart-2: oklch(0.556 0 0);
-    --chart-3: oklch(0.439 0 0);
-    --chart-4: oklch(0.371 0 0);
-    --chart-5: oklch(0.269 0 0);
-    --radius: 0.625rem;
-    --sidebar: oklch(0.985 0 0);
-    --sidebar-foreground: oklch(0.145 0 0);
-    --sidebar-primary: oklch(0.205 0 0);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.97 0 0);
-    --sidebar-accent-foreground: oklch(0.205 0 0);
-    --sidebar-border: oklch(0.922 0 0);
-    --sidebar-ring: oklch(0.708 0 0);
-}
-
-.dark {
-    --background: oklch(0.145 0 0);
-    --foreground: oklch(0.985 0 0);
-    --card: oklch(0.205 0 0);
-    --card-foreground: oklch(0.985 0 0);
-    --popover: oklch(0.205 0 0);
-    --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.922 0 0);
-    --primary-foreground: oklch(0.205 0 0);
-    --secondary: oklch(0.269 0 0);
-    --secondary-foreground: oklch(0.985 0 0);
-    --muted: oklch(0.269 0 0);
-    --muted-foreground: oklch(0.708 0 0);
-    --accent: oklch(0.269 0 0);
-    --accent-foreground: oklch(0.985 0 0);
-    --destructive: oklch(0.704 0.191 22.216);
-    --border: oklch(1 0 0 / 10%);
-    --input: oklch(1 0 0 / 15%);
-    --ring: oklch(0.556 0 0);
-    --chart-1: oklch(0.87 0 0);
-    --chart-2: oklch(0.556 0 0);
-    --chart-3: oklch(0.439 0 0);
-    --chart-4: oklch(0.371 0 0);
-    --chart-5: oklch(0.269 0 0);
-    --sidebar: oklch(0.205 0 0);
-    --sidebar-foreground: oklch(0.985 0 0);
-    --sidebar-primary: oklch(0.488 0.243 264.376);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.269 0 0);
-    --sidebar-accent-foreground: oklch(0.985 0 0);
-    --sidebar-border: oklch(1 0 0 / 10%);
-    --sidebar-ring: oklch(0.556 0 0);
+    /* Studio forge — cool stone + deep teal */
+    --background: oklch(0.96 0.012 230);
+    --foreground: oklch(0.22 0.025 240);
+    --card: oklch(0.99 0.006 230 / 0.86);
+    --card-foreground: oklch(0.22 0.025 240);
+    --popover: oklch(0.99 0.006 230);
+    --popover-foreground: oklch(0.22 0.025 240);
+    --primary: oklch(0.42 0.08 185);
+    --primary-foreground: oklch(0.98 0.01 185);
+    --secondary: oklch(0.93 0.015 230);
+    --secondary-foreground: oklch(0.28 0.03 240);
+    --muted: oklch(0.93 0.012 230);
+    --muted-foreground: oklch(0.48 0.025 240);
+    --accent: oklch(0.92 0.02 185);
+    --accent-foreground: oklch(0.32 0.05 185);
+    --destructive: oklch(0.55 0.18 25);
+    --border: oklch(0.86 0.015 230);
+    --input: oklch(0.88 0.015 230);
+    --ring: oklch(0.42 0.08 185);
+    --chart-1: oklch(0.42 0.08 185);
+    --chart-2: oklch(0.55 0.06 230);
+    --chart-3: oklch(0.48 0.025 240);
+    --chart-4: oklch(0.7 0.04 185);
+    --chart-5: oklch(0.35 0.04 240);
+    --radius: 0.75rem;
+    --sidebar: oklch(0.97 0.01 230);
+    --sidebar-foreground: oklch(0.22 0.025 240);
+    --sidebar-primary: oklch(0.42 0.08 185);
+    --sidebar-primary-foreground: oklch(0.98 0.01 185);
+    --sidebar-accent: oklch(0.93 0.015 230);
+    --sidebar-accent-foreground: oklch(0.28 0.03 240);
+    --sidebar-border: oklch(0.86 0.015 230);
+    --sidebar-ring: oklch(0.42 0.08 185);
 }
 
 @layer base {
   * {
     @apply border-border outline-ring/50;
-    }
+  }
   body {
-    @apply bg-background text-foreground;
-    }
+    @apply bg-background text-foreground antialiased;
+  }
   html {
     @apply font-sans;
-    }
+  }
+}
+
+@keyframes fade-rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@layer utilities {
+  .animate-fade-rise {
+    animation: fade-rise 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .animate-fade-in {
+    animation: fade-in 0.55s ease-out both;
+  }
+
+  .animate-fade-in-delayed {
+    animation: fade-in 0.6s ease-out 0.15s both;
+  }
+
+  .atmosphere {
+    background:
+      radial-gradient(ellipse 80% 60% at 15% 10%, oklch(0.9 0.04 185 / 0.55), transparent 55%),
+      radial-gradient(ellipse 70% 50% at 90% 80%, oklch(0.88 0.03 240 / 0.45), transparent 50%),
+      linear-gradient(165deg, oklch(0.97 0.01 230), oklch(0.93 0.018 220) 45%, oklch(0.94 0.02 200));
+  }
+
+  .atmosphere-grain::after {
+    content: "";
+    pointer-events: none;
+    position: absolute;
+    inset: 0;
+    opacity: 0.35;
+    mix-blend-mode: multiply;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.45'/%3E%3C/svg%3E");
+  }
 }

@@ -1,13 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { AppShell } from '@/components/AppShell';
 import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
 import { useAuth } from '@/features/auth/useAuth';
 
 export function HomePage() {
@@ -26,26 +20,29 @@ export function HomePage() {
   };
 
   return (
-    <div className="flex min-h-svh items-center justify-center bg-muted/30 px-4">
-      <Card className="w-full max-w-lg">
-        <CardHeader>
-          <CardTitle>Welcome to the application.</CardTitle>
-          <CardDescription>
+    <AppShell>
+      <div className="space-y-8">
+        <div className="animate-fade-in-delayed space-y-3">
+          <h1 className="font-heading text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
+            Welcome to the application.
+          </h1>
+          <p className="text-base text-muted-foreground">
             Signed in as {user?.name ?? 'User'}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Button
-            variant="outline"
-            onClick={() => {
-              void handleLogout();
-            }}
-            disabled={isLoggingOut}
-          >
-            {isLoggingOut ? 'Signing out...' : 'Logout'}
-          </Button>
-        </CardContent>
-      </Card>
-    </div>
+          </p>
+        </div>
+
+        <Button
+          variant="outline"
+          size="lg"
+          className="h-11 border-border/90 bg-card/60 px-6 active:scale-[0.98]"
+          onClick={() => {
+            void handleLogout();
+          }}
+          disabled={isLoggingOut}
+        >
+          {isLoggingOut ? 'Signing out...' : 'Logout'}
+        </Button>
+      </div>
+    </AppShell>
   );
 }
