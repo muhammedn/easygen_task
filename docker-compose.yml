@@ -28,7 +28,7 @@ services:
       NODE_ENV: production
       PORT: 3000
       MONGODB_URI: mongodb://${MONGO_USER:-easygen}:${MONGO_PASSWORD:-local-dev-only-mongo-password}@mongo:27017/easygen?authSource=admin
-      JWT_SECRET: ${JWT_SECRET:-local-dev-only-secret-change-me-32chars!!}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
       JWT_EXPIRES_IN: 15m
       REFRESH_TOKEN_EXPIRES_IN: 7d
       CORS_ORIGIN: http://localhost:8080

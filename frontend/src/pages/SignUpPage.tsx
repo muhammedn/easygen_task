@@ -43,6 +43,15 @@ export function SignUpPage() {
     }
   });
 
+  const emailDescribedBy = errors.email ? 'email-error' : undefined;
+  const nameDescribedBy = errors.name ? 'name-error' : undefined;
+  const passwordDescribedBy = [
+    'password-hint',
+    errors.password ? 'password-error' : null,
+  ]
+    .filter(Boolean)
+    .join(' ');
+
   return (
     <AuthShell>
       <div className="rounded-2xl border border-border/80 bg-card px-6 py-7 shadow-none backdrop-blur-sm sm:px-8">
@@ -70,9 +79,13 @@ export function SignUpPage() {
               autoComplete="email"
               className="h-11 bg-background/70"
               {...register('email')}
+              aria-invalid={Boolean(errors.email)}
+              aria-describedby={emailDescribedBy}
             />
             {errors.email ? (
-              <p className="text-sm text-destructive">{errors.email.message}</p>
+              <p id="email-error" role="alert" className="text-sm text-destructive">
+                {errors.email.message}
+              </p>
             ) : null}
           </div>
 
@@ -84,9 +97,13 @@ export function SignUpPage() {
               autoComplete="name"
               className="h-11 bg-background/70"
               {...register('name')}
+              aria-invalid={Boolean(errors.name)}
+              aria-describedby={nameDescribedBy}
             />
             {errors.name ? (
-              <p className="text-sm text-destructive">{errors.name.message}</p>
+              <p id="name-error" role="alert" className="text-sm text-destructive">
+                {errors.name.message}
+              </p>
             ) : null}
           </div>
 
@@ -98,12 +115,21 @@ export function SignUpPage() {
               autoComplete="new-password"
               className="h-11 bg-background/70"
               {...register('password')}
+              aria-invalid={Boolean(errors.password)}
+              aria-describedby={passwordDescribedBy}
             />
-            <p className="text-xs leading-relaxed text-muted-foreground">
+            <p
+              id="password-hint"
+              className="text-xs leading-relaxed text-muted-foreground"
+            >
               {PASSWORD_REQUIREMENTS_MESSAGE}
             </p>
             {errors.password ? (
-              <p className="text-sm text-destructive">
+              <p
+                id="password-error"
+                role="alert"
+                className="text-sm text-destructive"
+              >
                 {errors.password.message}
               </p>
             ) : null}

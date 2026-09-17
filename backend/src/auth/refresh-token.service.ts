@@ -22,10 +22,7 @@ export class RefreshTokenService {
     private readonly configService: ConfigService,
   ) {}
 
-  async issue(
-    userId: string,
-    familyId?: string,
-  ): Promise<IssuedRefreshToken> {
+  async issue(userId: string, familyId?: string): Promise<IssuedRefreshToken> {
     const token = randomBytes(32).toString('base64url');
     const tokenHash = this.hash(token);
     const resolvedFamilyId = familyId ?? randomUUID();
@@ -48,14 +45,24 @@ export class RefreshTokenService {
       .exec();
   }
 
+  /**
+   * Atomically claims an active session (revokedAt: null) then issues a
+   * replacement in the same family. Returns null if another request already
+   * claimed it (concurrent refresh).
+   */
   async rotate(
     session: RefreshSessionDocument,
-  ): Promise<IssuedRefreshToken> {
-    await this.refreshSessionModel
-      .findByIdAndUpdate(session._id, {
-        $set: { revokedAt: new Date() },
-      })
+  ): Promise<IssuedRefreshToken | null> {
+    const claimed = await this.refreshSessionModel
+      .findOneAndUpdate(
+        { _id: session._id, revokedAt: null },
+        { $set: { revokedAt: new Date() } },
+      )
       .exec();
+
+    if (!claimed) {
+      return null;
+    }
 
     return this.issue(session.userId.toString(), session.familyId);
   }

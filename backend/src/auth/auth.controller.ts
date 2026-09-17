@@ -9,7 +9,6 @@ import {
   UseGuards,
   Body,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import {
   ApiBadRequestResponse,
   ApiConflictResponse,
@@ -25,12 +24,9 @@ import {
 import { Throttle } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 import type { PublicUser } from '../users/types/public-user.js';
-import {
-  clearAuthCookies,
-  REFRESH_TOKEN_COOKIE,
-  setAuthCookie,
-  setRefreshCookie,
-} from './auth-cookie.js';
+import { AUTH_THROTTLE } from './auth.constants.js';
+import { AuthCookieService } from './auth-cookie.service.js';
+import { REFRESH_TOKEN_COOKIE } from './auth-cookie.js';
 import { AuthService } from './auth.service.js';
 import { CurrentUser } from './decorators/current-user.decorator.js';
 import { AuthResponseDto } from './dto/auth-response.dto.js';
@@ -44,11 +40,11 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard.js';
 export class AuthController {
   constructor(
     private readonly authService: AuthService,
-    private readonly configService: ConfigService,
+    private readonly authCookieService: AuthCookieService,
   ) {}
 
   @Post('signup')
-  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Throttle({ default: AUTH_THROTTLE.signupSignin })
   @ApiOperation({ summary: 'Register a new user' })
   @ApiCreatedResponse({ type: AuthResponseDto })
   @ApiBadRequestResponse({ description: 'Validation failed' })
@@ -59,14 +55,13 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response,
   ): Promise<AuthResponseDto> {
     const result = await this.authService.signup(dto);
-    setAuthCookie(res, result.accessToken, this.configService);
-    setRefreshCookie(res, result.refreshToken, this.configService);
+    this.authCookieService.setSession(res, result);
     return { user: result.user };
   }
 
   @Post('signin')
   @HttpCode(HttpStatus.OK)
-  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Throttle({ default: AUTH_THROTTLE.signupSignin })
   @ApiOperation({ summary: 'Sign in with email and password' })
   @ApiOkResponse({ type: AuthResponseDto })
   @ApiBadRequestResponse({ description: 'Validation failed' })
@@ -77,14 +72,13 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response,
   ): Promise<AuthResponseDto> {
     const result = await this.authService.signin(dto);
-    setAuthCookie(res, result.accessToken, this.configService);
-    setRefreshCookie(res, result.refreshToken, this.configService);
+    this.authCookieService.setSession(res, result);
     return { user: result.user };
   }
 
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
-  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  @Throttle({ default: AUTH_THROTTLE.refresh })
   @ApiCookieAuth('refresh_token')
   @ApiOperation({
     summary: 'Rotate the refresh token and issue a new access token',
@@ -101,11 +95,10 @@ export class AuthController {
 
     try {
       const result = await this.authService.refresh(rawToken);
-      setAuthCookie(res, result.accessToken, this.configService);
-      setRefreshCookie(res, result.refreshToken, this.configService);
+      this.authCookieService.setSession(res, result);
       return { user: result.user };
     } catch (error) {
-      clearAuthCookies(res, this.configService);
+      this.authCookieService.clearSession(res);
       throw error;
     }
   }
@@ -122,7 +115,7 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response,
   ): Promise<void> {
     await this.authService.logout(user.id);
-    clearAuthCookies(res, this.configService);
+    this.authCookieService.clearSession(res);
   }
 
   @Get('me')

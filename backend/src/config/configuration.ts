@@ -20,6 +20,10 @@ function parseOptionalBoolean(
   return value === 'true' || value === '1';
 }
 
+/**
+ * Reads process.env after Joi validation. Joi defaults are not written back
+ * to process.env, so mirror the same defaults here for optional keys.
+ */
 export default (): AppConfig => {
   const nodeEnv = process.env.NODE_ENV ?? 'development';
 

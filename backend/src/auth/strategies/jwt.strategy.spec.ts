@@ -12,18 +12,12 @@ describe('JwtStrategy', () => {
 
   let usersService: {
     findById: ReturnType<typeof vi.fn>;
-    toPublicUser: ReturnType<typeof vi.fn>;
   };
   let strategy: JwtStrategy;
 
   beforeEach(() => {
     usersService = {
       findById: vi.fn(),
-      toPublicUser: vi.fn((user: { id: string; email: string; name: string }) => ({
-        id: user.id,
-        email: user.email,
-        name: user.name,
-      })),
     };
 
     const configService = {
@@ -65,7 +59,6 @@ describe('JwtStrategy', () => {
     await expect(
       strategy.validate({ sub: userId, email, tv: 0 }),
     ).rejects.toBeInstanceOf(UnauthorizedException);
-    expect(usersService.toPublicUser).not.toHaveBeenCalled();
   });
 
   it('rejects when tokenVersion does not match (revoked session)', async () => {
@@ -85,6 +78,5 @@ describe('JwtStrategy', () => {
       );
       return true;
     });
-    expect(usersService.toPublicUser).not.toHaveBeenCalled();
   });
 });

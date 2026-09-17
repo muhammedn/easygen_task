@@ -10,6 +10,10 @@ import { Types } from 'mongoose';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { UserDocument } from '../users/schemas/user.schema.js';
 import { UsersService } from '../users/users.service.js';
+import {
+  LOCKOUT_DURATION_MS,
+  MAX_FAILED_LOGIN_ATTEMPTS,
+} from './auth.constants.js';
 import { AuthService } from './auth.service.js';
 import { RefreshTokenService } from './refresh-token.service.js';
 import type { RefreshSessionDocument } from './schemas/refresh-session.schema.js';
@@ -28,7 +32,6 @@ describe('AuthService', () => {
     findByEmailWithPassword: ReturnType<typeof vi.fn>;
     findById: ReturnType<typeof vi.fn>;
     create: ReturnType<typeof vi.fn>;
-    toPublicUser: ReturnType<typeof vi.fn>;
     recordFailedLogin: ReturnType<typeof vi.fn>;
     resetLoginFailures: ReturnType<typeof vi.fn>;
     bumpTokenVersion: ReturnType<typeof vi.fn>;
@@ -55,13 +58,6 @@ describe('AuthService', () => {
       findByEmailWithPassword: vi.fn(),
       findById: vi.fn(),
       create: vi.fn(),
-      toPublicUser: vi.fn(
-        (user: { id: string; email: string; name: string }) => ({
-          id: user.id,
-          email: user.email,
-          name: user.name,
-        }),
-      ),
       recordFailedLogin: vi.fn().mockResolvedValue(undefined),
       resetLoginFailures: vi.fn().mockResolvedValue(undefined),
       bumpTokenVersion: vi.fn().mockResolvedValue(undefined),
@@ -122,9 +118,7 @@ describe('AuthService', () => {
         passwordHash: string;
       };
       expect(createArg.passwordHash).not.toBe(password);
-      expect(
-        await bcrypt.compare(password, createArg.passwordHash),
-      ).toBe(true);
+      expect(await bcrypt.compare(password, createArg.passwordHash)).toBe(true);
       expect(jwtService.signAsync).toHaveBeenCalledWith({
         sub: userId,
         email,
@@ -220,8 +214,8 @@ describe('AuthService', () => {
       });
       expect(usersService.recordFailedLogin).toHaveBeenCalledWith(
         userId,
-        5,
-        15 * 60 * 1000,
+        MAX_FAILED_LOGIN_ATTEMPTS,
+        LOCKOUT_DURATION_MS,
       );
       expect(jwtService.signAsync).not.toHaveBeenCalled();
     });
@@ -229,15 +223,15 @@ describe('AuthService', () => {
     it('throws UnauthorizedException for unknown email', async () => {
       usersService.findByEmailWithPassword.mockResolvedValue(null);
 
-      await expect(
-        authService.signin({ email, password }),
-      ).rejects.toSatisfy((error: unknown) => {
-        expect(error).toBeInstanceOf(UnauthorizedException);
-        expect((error as UnauthorizedException).message).toBe(
-          'Invalid credentials',
-        );
-        return true;
-      });
+      await expect(authService.signin({ email, password })).rejects.toSatisfy(
+        (error: unknown) => {
+          expect(error).toBeInstanceOf(UnauthorizedException);
+          expect((error as UnauthorizedException).message).toBe(
+            'Invalid credentials',
+          );
+          return true;
+        },
+      );
       expect(jwtService.signAsync).not.toHaveBeenCalled();
       expect(usersService.recordFailedLogin).not.toHaveBeenCalled();
     });
@@ -253,15 +247,15 @@ describe('AuthService', () => {
         lockUntil: new Date(Date.now() + 60_000),
       } as UserDocument);
 
-      await expect(
-        authService.signin({ email, password }),
-      ).rejects.toSatisfy((error: unknown) => {
-        expect(error).toBeInstanceOf(HttpException);
-        expect((error as HttpException).getStatus()).toBe(
-          HttpStatus.TOO_MANY_REQUESTS,
-        );
-        return true;
-      });
+      await expect(authService.signin({ email, password })).rejects.toSatisfy(
+        (error: unknown) => {
+          expect(error).toBeInstanceOf(HttpException);
+          expect((error as HttpException).getStatus()).toBe(
+            HttpStatus.TOO_MANY_REQUESTS,
+          );
+          return true;
+        },
+      );
       expect(jwtService.signAsync).not.toHaveBeenCalled();
     });
 
@@ -325,7 +319,7 @@ describe('AuthService', () => {
       );
     });
 
-    it('detects reuse and revokes the family plus bumps tokenVersion', async () => {
+    it('treats recent reuse as a benign race without burning the family', async () => {
       refreshTokenService.findByToken.mockResolvedValue({
         ...activeSession,
         revokedAt: new Date(),
@@ -334,9 +328,39 @@ describe('AuthService', () => {
       await expect(authService.refresh(refreshToken)).rejects.toBeInstanceOf(
         UnauthorizedException,
       );
+      expect(refreshTokenService.revokeFamily).not.toHaveBeenCalled();
+      expect(usersService.bumpTokenVersion).not.toHaveBeenCalled();
+      expect(refreshTokenService.rotate).not.toHaveBeenCalled();
+    });
+
+    it('detects reuse outside the grace window and burns the family', async () => {
+      refreshTokenService.findByToken.mockResolvedValue({
+        ...activeSession,
+        revokedAt: new Date(Date.now() - 60_000),
+      } as RefreshSessionDocument);
+
+      await expect(authService.refresh(refreshToken)).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
       expect(refreshTokenService.revokeFamily).toHaveBeenCalledWith(familyId);
       expect(usersService.bumpTokenVersion).toHaveBeenCalledWith(userId);
       expect(refreshTokenService.rotate).not.toHaveBeenCalled();
+    });
+
+    it('rejects when rotate loses the atomic claim', async () => {
+      refreshTokenService.findByToken.mockResolvedValue(activeSession);
+      usersService.findById.mockResolvedValue({
+        id: userId,
+        email,
+        name,
+        tokenVersion: 1,
+      } as UserDocument);
+      refreshTokenService.rotate.mockResolvedValue(null);
+
+      await expect(authService.refresh(refreshToken)).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
+      expect(refreshTokenService.revokeFamily).not.toHaveBeenCalled();
     });
 
     it('rejects an expired session', async () => {
@@ -356,9 +380,7 @@ describe('AuthService', () => {
     it('bumps the token version and revokes refresh sessions', async () => {
       await authService.logout(userId);
       expect(usersService.bumpTokenVersion).toHaveBeenCalledWith(userId);
-      expect(refreshTokenService.revokeAllForUser).toHaveBeenCalledWith(
-        userId,
-      );
+      expect(refreshTokenService.revokeAllForUser).toHaveBeenCalledWith(userId);
     });
   });
 });

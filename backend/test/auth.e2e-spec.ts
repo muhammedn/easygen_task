@@ -7,17 +7,22 @@ import { Model } from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { ACCESS_TOKEN_COOKIE, REFRESH_TOKEN_COOKIE } from '../src/auth/auth-cookie.js';
+import {
+  ACCESS_TOKEN_COOKIE,
+  REFRESH_TOKEN_COOKIE,
+} from '../src/auth/auth-cookie.js';
+import {
+  RefreshSession,
+  type RefreshSessionDocument,
+} from '../src/auth/schemas/refresh-session.schema.js';
 import { HttpExceptionFilter } from '../src/common/filters/http-exception.filter.js';
 import {
   NAME_MAX_LENGTH,
   PASSWORD_MAX_LENGTH,
   PASSWORD_REQUIREMENTS_MESSAGE,
 } from '../src/common/constants/validation.js';
-import {
-  User,
-  type UserDocument,
-} from '../src/users/schemas/user.schema.js';
+import { User, type UserDocument } from '../src/users/schemas/user.schema.js';
+
 function getSetCookieHeader(res: request.Response): string {
   const raw = res.headers['set-cookie'];
   if (Array.isArray(raw)) {
@@ -26,6 +31,8 @@ function getSetCookieHeader(res: request.Response): string {
   return typeof raw === 'string' ? raw : '';
 }
 
+// Set-Cookie Expires values contain commas; we join headers with ';' then
+// split on both ',' and ';' and re-filter by cookie name.
 function cookieHeaderFromSetCookie(
   setCookie: string,
   cookieName: string = ACCESS_TOKEN_COOKIE,
@@ -44,6 +51,7 @@ describe('Auth (e2e)', () => {
   let app: INestApplication;
   let mongoServer: MongoMemoryServer;
   let userModel: Model<UserDocument>;
+  let refreshSessionModel: Model<RefreshSessionDocument>;
   const password = 'Secret1!';
   const name = 'Test User';
   let email: string;
@@ -80,6 +88,9 @@ describe('Auth (e2e)', () => {
     await app.init();
 
     userModel = app.get<Model<UserDocument>>(getModelToken(User.name));
+    refreshSessionModel = app.get<Model<RefreshSessionDocument>>(
+      getModelToken(RefreshSession.name),
+    );
     email = `user_${Date.now()}@example.com`;
   }, 300_000);
 
@@ -323,7 +334,7 @@ describe('Auth (e2e)', () => {
     await request(app.getHttpServer()).post('/auth/refresh').expect(401);
   });
 
-  it('rotates refresh tokens and rejects reuse of the old token', async () => {
+  it('rotates refresh tokens; immediate reuse does not burn the family', async () => {
     const refreshEmail = `refresh_${Date.now()}@example.com`;
     await request(app.getHttpServer())
       .post('/auth/signup')
@@ -362,6 +373,49 @@ describe('Auth (e2e)', () => {
       .set('Cookie', newAccess)
       .expect(200);
 
+    // Immediate reuse is treated as a concurrent-tab race (grace window).
+    await request(app.getHttpServer())
+      .post('/auth/refresh')
+      .set('Cookie', oldRefresh)
+      .expect(401);
+
+    await request(app.getHttpServer())
+      .post('/auth/refresh')
+      .set('Cookie', newRefresh)
+      .expect(200);
+  });
+
+  it('burns the family when a revoked refresh token is reused after the grace window', async () => {
+    const theftEmail = `theft_${Date.now()}@example.com`;
+    await request(app.getHttpServer())
+      .post('/auth/signup')
+      .send({ email: theftEmail, name, password })
+      .expect(201);
+
+    const signinRes = await request(app.getHttpServer())
+      .post('/auth/signin')
+      .send({ email: theftEmail, password })
+      .expect(200);
+
+    const oldRefresh = cookieHeaderFromSetCookie(
+      getSetCookieHeader(signinRes),
+      REFRESH_TOKEN_COOKIE,
+    );
+
+    const refreshRes = await request(app.getHttpServer())
+      .post('/auth/refresh')
+      .set('Cookie', oldRefresh)
+      .expect(200);
+
+    const newRefresh = cookieHeaderFromSetCookie(
+      getSetCookieHeader(refreshRes),
+      REFRESH_TOKEN_COOKIE,
+    );
+
+    await refreshSessionModel
+      .updateMany({}, { $set: { revokedAt: new Date(Date.now() - 60_000) } })
+      .exec();
+
     await request(app.getHttpServer())
       .post('/auth/refresh')
       .set('Cookie', oldRefresh)
@@ -371,6 +425,47 @@ describe('Auth (e2e)', () => {
       .post('/auth/refresh')
       .set('Cookie', newRefresh)
       .expect(401);
+  });
+
+  it('allows only one winner when the same refresh token is used concurrently', async () => {
+    const raceEmail = `race_${Date.now()}@example.com`;
+    await request(app.getHttpServer())
+      .post('/auth/signup')
+      .send({ email: raceEmail, name, password })
+      .expect(201);
+
+    const signinRes = await request(app.getHttpServer())
+      .post('/auth/signin')
+      .send({ email: raceEmail, password })
+      .expect(200);
+
+    const refreshCookie = cookieHeaderFromSetCookie(
+      getSetCookieHeader(signinRes),
+      REFRESH_TOKEN_COOKIE,
+    );
+
+    const [first, second] = await Promise.all([
+      request(app.getHttpServer())
+        .post('/auth/refresh')
+        .set('Cookie', refreshCookie),
+      request(app.getHttpServer())
+        .post('/auth/refresh')
+        .set('Cookie', refreshCookie),
+    ]);
+
+    const statuses = [first.status, second.status].sort();
+    expect(statuses).toEqual([200, 401]);
+
+    const winner = first.status === 200 ? first : second;
+    const winnerRefresh = cookieHeaderFromSetCookie(
+      getSetCookieHeader(winner),
+      REFRESH_TOKEN_COOKIE,
+    );
+
+    await request(app.getHttpServer())
+      .post('/auth/refresh')
+      .set('Cookie', winnerRefresh)
+      .expect(200);
   });
 
   it('logout clears both cookies and blocks later refresh', async () => {

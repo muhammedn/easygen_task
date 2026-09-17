@@ -4,10 +4,6 @@ export type PublicUser = {
   name: string;
 };
 
-export type AuthResponse = {
-  user: PublicUser;
-};
-
-export type MeResponse = {
+export type UserEnvelope = {
   user: PublicUser;
 };

@@ -9,31 +9,29 @@ import { JwtService } from '@nestjs/jwt';
 import bcrypt from 'bcrypt';
 import { UsersService } from '../users/users.service.js';
 import type { UserDocument } from '../users/schemas/user.schema.js';
+import { toPublicUser } from '../users/types/public-user.js';
+import {
+  BCRYPT_COST,
+  DUMMY_PASSWORD_HASH,
+  LOCKOUT_DURATION_MS,
+  MAX_FAILED_LOGIN_ATTEMPTS,
+  REFRESH_REUSE_GRACE_MS,
+} from './auth.constants.js';
 import type { SignInDto } from './dto/signin.dto.js';
 import type { SignUpDto } from './dto/signup.dto.js';
 import { RefreshTokenService } from './refresh-token.service.js';
-import type { AuthResponse, JwtPayload } from './types/auth-response.js';
-
-const BCRYPT_COST = 12;
-const MAX_FAILED_LOGIN_ATTEMPTS = 5;
-const LOCKOUT_DURATION_MS = 15 * 60 * 1000;
+import type { RefreshSessionDocument } from './schemas/refresh-session.schema.js';
+import type { IssuedSession, JwtPayload } from './types/auth-response.js';
 
 @Injectable()
 export class AuthService {
-  private readonly dummyPasswordHash: string;
-
   constructor(
     private readonly usersService: UsersService,
     private readonly jwtService: JwtService,
     private readonly refreshTokenService: RefreshTokenService,
-  ) {
-    this.dummyPasswordHash = bcrypt.hashSync(
-      'dummy-password-for-timing',
-      BCRYPT_COST,
-    );
-  }
+  ) {}
 
-  async signup(dto: SignUpDto): Promise<AuthResponse> {
+  async signup(dto: SignUpDto): Promise<IssuedSession> {
     const existing = await this.usersService.findByEmail(dto.email);
     if (existing) {
       throw new ConflictException('Email already in use');
@@ -56,10 +54,10 @@ export class AuthService {
     }
   }
 
-  async signin(dto: SignInDto): Promise<AuthResponse> {
+  async signin(dto: SignInDto): Promise<IssuedSession> {
     const user = await this.usersService.findByEmailWithPassword(dto.email);
     if (!user) {
-      await bcrypt.compare(dto.password, this.dummyPasswordHash);
+      await bcrypt.compare(dto.password, DUMMY_PASSWORD_HASH);
       throw new UnauthorizedException('Invalid credentials');
     }
 
@@ -90,7 +88,7 @@ export class AuthService {
     return this.issueSession(user);
   }
 
-  async refresh(rawToken: string | undefined): Promise<AuthResponse> {
+  async refresh(rawToken: string | undefined): Promise<IssuedSession> {
     if (!rawToken) {
       throw new UnauthorizedException('Invalid credentials');
     }
@@ -100,14 +98,12 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    if (session.revokedAt) {
-      await this.refreshTokenService.revokeFamily(session.familyId);
-      await this.usersService.bumpTokenVersion(session.userId.toString());
+    if (session.expiresAt.getTime() <= Date.now()) {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    if (session.expiresAt.getTime() <= Date.now()) {
-      throw new UnauthorizedException('Invalid credentials');
+    if (session.revokedAt) {
+      await this.handleReuse(session);
     }
 
     const user = await this.usersService.findById(session.userId.toString());
@@ -116,11 +112,16 @@ export class AuthService {
     }
 
     const rotated = await this.refreshTokenService.rotate(session);
+    if (!rotated) {
+      // Another tab claimed this token first — treat as a benign race.
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
     const accessToken = await this.signToken(user);
     return {
       accessToken,
       refreshToken: rotated.token,
-      user: this.usersService.toPublicUser(user),
+      user: toPublicUser(user),
     };
   }
 
@@ -129,14 +130,30 @@ export class AuthService {
     await this.refreshTokenService.revokeAllForUser(userId);
   }
 
-  private async issueSession(user: UserDocument): Promise<AuthResponse> {
-    const publicUser = this.usersService.toPublicUser(user);
+  /**
+   * Reuse of a revoked refresh token: within the grace window this is likely
+   * a concurrent-tab race (401, keep family). Outside the window treat as theft
+   * and burn the whole family.
+   */
+  private async handleReuse(session: RefreshSessionDocument): Promise<never> {
+    const revokedAtMs = session.revokedAt?.getTime() ?? 0;
+    const ageMs = Date.now() - revokedAtMs;
+
+    if (ageMs > REFRESH_REUSE_GRACE_MS) {
+      await this.refreshTokenService.revokeFamily(session.familyId);
+      await this.usersService.bumpTokenVersion(session.userId.toString());
+    }
+
+    throw new UnauthorizedException('Invalid credentials');
+  }
+
+  private async issueSession(user: UserDocument): Promise<IssuedSession> {
     const accessToken = await this.signToken(user);
     const refresh = await this.refreshTokenService.issue(user.id as string);
     return {
       accessToken,
       refreshToken: refresh.token,
-      user: publicUser,
+      user: toPublicUser(user),
     };
   }
 

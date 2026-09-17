@@ -48,6 +48,9 @@ export function SignInPage() {
     }
   });
 
+  const emailDescribedBy = errors.email ? 'email-error' : undefined;
+  const passwordDescribedBy = errors.password ? 'password-error' : undefined;
+
   return (
     <AuthShell>
       <div className="rounded-2xl border border-border/80 bg-card px-6 py-7 shadow-none backdrop-blur-sm sm:px-8">
@@ -75,9 +78,13 @@ export function SignInPage() {
               autoComplete="email"
               className="h-11 bg-background/70"
               {...register('email')}
+              aria-invalid={Boolean(errors.email)}
+              aria-describedby={emailDescribedBy}
             />
             {errors.email ? (
-              <p className="text-sm text-destructive">{errors.email.message}</p>
+              <p id="email-error" role="alert" className="text-sm text-destructive">
+                {errors.email.message}
+              </p>
             ) : null}
           </div>
 
@@ -89,9 +96,15 @@ export function SignInPage() {
               autoComplete="current-password"
               className="h-11 bg-background/70"
               {...register('password')}
+              aria-invalid={Boolean(errors.password)}
+              aria-describedby={passwordDescribedBy}
             />
             {errors.password ? (
-              <p className="text-sm text-destructive">
+              <p
+                id="password-error"
+                role="alert"
+                className="text-sm text-destructive"
+              >
                 {errors.password.message}
               </p>
             ) : null}

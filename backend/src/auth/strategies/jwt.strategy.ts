@@ -4,7 +4,10 @@ import { PassportStrategy } from '@nestjs/passport';
 import type { Request } from 'express';
 import passportJwt from 'passport-jwt';
 import { UsersService } from '../../users/users.service.js';
-import type { PublicUser } from '../../users/types/public-user.js';
+import {
+  toPublicUser,
+  type PublicUser,
+} from '../../users/types/public-user.js';
 import { ACCESS_TOKEN_COOKIE } from '../auth-cookie.js';
 import type { JwtPayload } from '../types/auth-response.js';
 
@@ -38,6 +41,6 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     if (payload.tv !== user.tokenVersion) {
       throw new UnauthorizedException('Invalid credentials');
     }
-    return this.usersService.toPublicUser(user);
+    return toPublicUser(user);
   }
 }

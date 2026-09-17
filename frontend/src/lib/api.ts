@@ -20,7 +20,10 @@ function shouldSkipRefresh(url: string | undefined): boolean {
   if (!url) {
     return false;
   }
-  return SKIP_REFRESH_PATHS.some((path) => url.includes(path));
+  const path = url.split('?')[0] ?? url;
+  return SKIP_REFRESH_PATHS.some(
+    (skipPath) => path === skipPath || path.endsWith(skipPath),
+  );
 }
 
 async function refreshSession(): Promise<void> {

@@ -6,15 +6,7 @@ export const ACCESS_TOKEN_COOKIE = 'access_token';
 export const REFRESH_TOKEN_COOKIE = 'refresh_token';
 export const REFRESH_TOKEN_COOKIE_PATH = '/auth/refresh';
 
-function cookieBaseOptions(configService: ConfigService): CookieOptions {
-  return {
-    httpOnly: true,
-    sameSite: 'strict',
-    secure: configService.getOrThrow<boolean>('cookieSecure'),
-  };
-}
-
-export function buildCookieOptions(
+export function buildAccessCookieOptions(
   configService: ConfigService,
 ): CookieOptions {
   const jwtExpiresIn = configService.getOrThrow<string>('jwtExpiresIn');
@@ -25,7 +17,9 @@ export function buildCookieOptions(
   }
 
   return {
-    ...cookieBaseOptions(configService),
+    httpOnly: true,
+    sameSite: 'strict',
+    secure: configService.getOrThrow<boolean>('cookieSecure'),
     path: '/',
     maxAge,
   };
@@ -46,62 +40,38 @@ export function buildRefreshCookieOptions(
   }
 
   return {
-    ...cookieBaseOptions(configService),
+    httpOnly: true,
+    sameSite: 'strict',
+    secure: configService.getOrThrow<boolean>('cookieSecure'),
     path: REFRESH_TOKEN_COOKIE_PATH,
     maxAge,
   };
 }
 
-export function setAuthCookie(
-  res: Response,
-  token: string,
-  configService: ConfigService,
-): void {
-  res.cookie(ACCESS_TOKEN_COOKIE, token, buildCookieOptions(configService));
-}
-
-export function setRefreshCookie(
-  res: Response,
-  token: string,
-  configService: ConfigService,
-): void {
-  res.cookie(
-    REFRESH_TOKEN_COOKIE,
-    token,
-    buildRefreshCookieOptions(configService),
-  );
-}
-
-export function clearAuthCookie(
-  res: Response,
-  configService: ConfigService,
-): void {
-  const options = buildCookieOptions(configService);
-  res.clearCookie(ACCESS_TOKEN_COOKIE, {
+function clearCookieAttrs(options: CookieOptions): CookieOptions {
+  return {
     httpOnly: options.httpOnly,
     sameSite: options.sameSite,
     secure: options.secure,
     path: options.path,
-  });
+  };
 }
 
-export function clearRefreshCookie(
+export function applySessionCookies(
   res: Response,
-  configService: ConfigService,
+  tokens: { accessToken: string; refreshToken: string },
+  accessOptions: CookieOptions,
+  refreshOptions: CookieOptions,
 ): void {
-  const options = buildRefreshCookieOptions(configService);
-  res.clearCookie(REFRESH_TOKEN_COOKIE, {
-    httpOnly: options.httpOnly,
-    sameSite: options.sameSite,
-    secure: options.secure,
-    path: options.path,
-  });
+  res.cookie(ACCESS_TOKEN_COOKIE, tokens.accessToken, accessOptions);
+  res.cookie(REFRESH_TOKEN_COOKIE, tokens.refreshToken, refreshOptions);
 }
 
-export function clearAuthCookies(
+export function clearSessionCookies(
   res: Response,
-  configService: ConfigService,
+  accessOptions: CookieOptions,
+  refreshOptions: CookieOptions,
 ): void {
-  clearAuthCookie(res, configService);
-  clearRefreshCookie(res, configService);
+  res.clearCookie(ACCESS_TOKEN_COOKIE, clearCookieAttrs(accessOptions));
+  res.clearCookie(REFRESH_TOKEN_COOKIE, clearCookieAttrs(refreshOptions));
 }

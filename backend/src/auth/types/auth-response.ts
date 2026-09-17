@@ -1,6 +1,6 @@
 import type { PublicUser } from '../../users/types/public-user.js';
 
-export type AuthResponse = {
+export type IssuedSession = {
   accessToken: string;
   refreshToken: string;
   user: PublicUser;

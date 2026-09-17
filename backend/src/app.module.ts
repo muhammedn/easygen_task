@@ -1,13 +1,9 @@
-import {
-  Logger,
-  MiddlewareConsumer,
-  Module,
-  NestModule,
-} from '@nestjs/common';
+import { Logger, MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import type { Connection } from 'mongoose';
 import { AuthModule } from './auth/auth.module.js';
 import { LoggerMiddleware } from './common/middleware/logger.middleware.js';
 import configuration from './config/configuration.js';
@@ -37,9 +33,7 @@ import { UsersModule } from './users/users.module.js';
         const logger = new Logger('Mongoose');
         return {
           uri: configService.getOrThrow<string>('mongodbUri'),
-          connectionFactory: (connection: {
-            on: (event: string, listener: () => void) => void;
-          }) => {
+          connectionFactory: (connection: Connection) => {
             connection.on('connected', () => {
               logger.log('MongoDB connected');
             });

@@ -5,9 +5,12 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import { AppModule } from './app.module.js';
+import {
+  ACCESS_TOKEN_COOKIE,
+  REFRESH_TOKEN_COOKIE,
+} from './auth/auth-cookie.js';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter.js';
 import type { AppConfig } from './config/configuration.js';
-import { ACCESS_TOKEN_COOKIE, REFRESH_TOKEN_COOKIE } from './auth/auth-cookie.js';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -15,10 +18,11 @@ async function bootstrap() {
   const logger = new Logger('Bootstrap');
 
   const port = configService.getOrThrow<number>('port');
-  const corsOrigin = configService.getOrThrow<AppConfig['corsOrigin']>(
-    'corsOrigin',
-  );
+  const corsOrigin =
+    configService.getOrThrow<AppConfig['corsOrigin']>('corsOrigin');
   const trustProxy = configService.getOrThrow<boolean>('trustProxy');
+  const nodeEnv = configService.getOrThrow<string>('nodeEnv');
+  const isProduction = nodeEnv === 'production';
 
   if (trustProxy) {
     const expressApp = app.getHttpAdapter().getInstance() as {
@@ -27,17 +31,23 @@ async function bootstrap() {
     expressApp.set('trust proxy', 1);
   }
 
+  // Swagger UI needs inline scripts; keep a relaxed CSP only outside production.
+  // In production the API is JSON-only (Swagger disabled) and Helmet defaults apply.
   app.use(
-    helmet({
-      contentSecurityPolicy: {
-        directives: {
-          defaultSrc: ["'self'"],
-          styleSrc: ["'self'", "'unsafe-inline'"],
-          scriptSrc: ["'self'", "'unsafe-inline'"],
-          imgSrc: ["'self'", 'data:'],
-        },
-      },
-    }),
+    helmet(
+      isProduction
+        ? undefined
+        : {
+            contentSecurityPolicy: {
+              directives: {
+                defaultSrc: ["'self'"],
+                styleSrc: ["'self'", "'unsafe-inline'"],
+                scriptSrc: ["'self'", "'unsafe-inline'"],
+                imgSrc: ["'self'", 'data:'],
+              },
+            },
+          },
+    ),
   );
   app.use(cookieParser());
   app.enableCors({
@@ -53,28 +63,26 @@ async function bootstrap() {
   );
   app.useGlobalFilters(new HttpExceptionFilter());
 
-  const nodeEnv = configService.getOrThrow<string>('nodeEnv');
+  if (!isProduction) {
+    const swaggerConfig = new DocumentBuilder()
+      .setTitle('Auth API')
+      .setDescription('Sign up, sign in, and protected user endpoints')
+      .setVersion('1.0')
+      .addCookieAuth(ACCESS_TOKEN_COOKIE)
+      .addCookieAuth(
+        REFRESH_TOKEN_COOKIE,
+        { type: 'apiKey', in: 'cookie' },
+        'refresh_token',
+      )
+      .build();
 
-  const swaggerBuilder = new DocumentBuilder()
-    .setTitle('Auth API')
-    .setDescription('Sign up, sign in, and protected user endpoints')
-    .setVersion('1.0')
-    .addCookieAuth(ACCESS_TOKEN_COOKIE)
-    .addCookieAuth(REFRESH_TOKEN_COOKIE, { type: 'apiKey', in: 'cookie' }, 'refresh_token');
-
-  if (nodeEnv === 'production') {
-    swaggerBuilder.addServer('/api');
+    const document = SwaggerModule.createDocument(app, swaggerConfig);
+    SwaggerModule.setup('docs', app, document);
   }
-
-  const swaggerConfig = swaggerBuilder.build();
-  const document = SwaggerModule.createDocument(app, swaggerConfig);
-  SwaggerModule.setup('docs', app, document);
 
   await app.listen(port);
   logger.log(`Application listening on http://localhost:${port}`);
-  if (nodeEnv === 'production') {
-    logger.log('Swagger docs at http://localhost:8080/api/docs/ (via nginx)');
-  } else {
+  if (!isProduction) {
     logger.log(`Swagger docs at http://localhost:${port}/docs`);
   }
 }
