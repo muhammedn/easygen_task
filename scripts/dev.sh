@@ -50,7 +50,8 @@ ensure_deps() {
     return 0
   fi
   echo "Installing ${dir} dependencies..."
-  (cd "${dir}" && npm install)
+  # Match Docker/CI: Nest 12 + @nestjs/throttler needs legacy peer resolution.
+  (cd "${dir}" && npm install --legacy-peer-deps)
 }
 
 ensure_env backend
