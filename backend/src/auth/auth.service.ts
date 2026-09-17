@@ -11,6 +11,7 @@ import { UsersService } from '../users/users.service.js';
 import type { UserDocument } from '../users/schemas/user.schema.js';
 import type { SignInDto } from './dto/signin.dto.js';
 import type { SignUpDto } from './dto/signup.dto.js';
+import { RefreshTokenService } from './refresh-token.service.js';
 import type { AuthResponse, JwtPayload } from './types/auth-response.js';
 
 const BCRYPT_COST = 12;
@@ -24,6 +25,7 @@ export class AuthService {
   constructor(
     private readonly usersService: UsersService,
     private readonly jwtService: JwtService,
+    private readonly refreshTokenService: RefreshTokenService,
   ) {
     this.dummyPasswordHash = bcrypt.hashSync(
       'dummy-password-for-timing',
@@ -45,9 +47,7 @@ export class AuthService {
         name: dto.name,
         passwordHash,
       });
-      const publicUser = this.usersService.toPublicUser(user);
-      const accessToken = await this.signToken(user);
-      return { accessToken, user: publicUser };
+      return this.issueSession(user);
     } catch (error) {
       if (this.isDuplicateKeyError(error)) {
         throw new ConflictException('Email already in use');
@@ -87,13 +87,57 @@ export class AuthService {
       await this.usersService.resetLoginFailures(user.id as string);
     }
 
-    const publicUser = this.usersService.toPublicUser(user);
+    return this.issueSession(user);
+  }
+
+  async refresh(rawToken: string | undefined): Promise<AuthResponse> {
+    if (!rawToken) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    const session = await this.refreshTokenService.findByToken(rawToken);
+    if (!session) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    if (session.revokedAt) {
+      await this.refreshTokenService.revokeFamily(session.familyId);
+      await this.usersService.bumpTokenVersion(session.userId.toString());
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    if (session.expiresAt.getTime() <= Date.now()) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    const user = await this.usersService.findById(session.userId.toString());
+    if (!user) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    const rotated = await this.refreshTokenService.rotate(session);
     const accessToken = await this.signToken(user);
-    return { accessToken, user: publicUser };
+    return {
+      accessToken,
+      refreshToken: rotated.token,
+      user: this.usersService.toPublicUser(user),
+    };
   }
 
   async logout(userId: string): Promise<void> {
     await this.usersService.bumpTokenVersion(userId);
+    await this.refreshTokenService.revokeAllForUser(userId);
+  }
+
+  private async issueSession(user: UserDocument): Promise<AuthResponse> {
+    const publicUser = this.usersService.toPublicUser(user);
+    const accessToken = await this.signToken(user);
+    const refresh = await this.refreshTokenService.issue(user.id as string);
+    return {
+      accessToken,
+      refreshToken: refresh.token,
+      user: publicUser,
+    };
   }
 
   private async signToken(user: UserDocument): Promise<string> {

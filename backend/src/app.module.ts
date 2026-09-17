@@ -22,12 +22,15 @@ import { UsersModule } from './users/users.module.js';
       validationSchema: envValidationSchema,
       load: [configuration],
     }),
-    ThrottlerModule.forRoot([
-      {
-        ttl: 60_000,
-        limit: 100,
-      },
-    ]),
+    ThrottlerModule.forRoot({
+      skipIf: () => process.env.NODE_ENV === 'test',
+      throttlers: [
+        {
+          ttl: 60_000,
+          limit: 100,
+        },
+      ],
+    }),
     MongooseModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => {

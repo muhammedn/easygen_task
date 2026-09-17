@@ -6,21 +6,27 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import bcrypt from 'bcrypt';
+import { Types } from 'mongoose';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { UserDocument } from '../users/schemas/user.schema.js';
 import { UsersService } from '../users/users.service.js';
 import { AuthService } from './auth.service.js';
+import { RefreshTokenService } from './refresh-token.service.js';
+import type { RefreshSessionDocument } from './schemas/refresh-session.schema.js';
 
 describe('AuthService', () => {
   const email = 'jane@example.com';
   const name = 'Jane Doe';
   const password = 'Secret1!';
   const userId = '507f1f77bcf86cd799439011';
+  const familyId = 'family-1';
+  const refreshToken = 'opaque-refresh-token';
 
   let passwordHash: string;
   let usersService: {
     findByEmail: ReturnType<typeof vi.fn>;
     findByEmailWithPassword: ReturnType<typeof vi.fn>;
+    findById: ReturnType<typeof vi.fn>;
     create: ReturnType<typeof vi.fn>;
     toPublicUser: ReturnType<typeof vi.fn>;
     recordFailedLogin: ReturnType<typeof vi.fn>;
@@ -29,6 +35,13 @@ describe('AuthService', () => {
   };
   let jwtService: {
     signAsync: ReturnType<typeof vi.fn>;
+  };
+  let refreshTokenService: {
+    issue: ReturnType<typeof vi.fn>;
+    findByToken: ReturnType<typeof vi.fn>;
+    rotate: ReturnType<typeof vi.fn>;
+    revokeFamily: ReturnType<typeof vi.fn>;
+    revokeAllForUser: ReturnType<typeof vi.fn>;
   };
   let authService: AuthService;
 
@@ -40,6 +53,7 @@ describe('AuthService', () => {
     usersService = {
       findByEmail: vi.fn(),
       findByEmailWithPassword: vi.fn(),
+      findById: vi.fn(),
       create: vi.fn(),
       toPublicUser: vi.fn(
         (user: { id: string; email: string; name: string }) => ({
@@ -55,9 +69,23 @@ describe('AuthService', () => {
     jwtService = {
       signAsync: vi.fn().mockResolvedValue('signed-token'),
     };
+    refreshTokenService = {
+      issue: vi.fn().mockResolvedValue({
+        token: refreshToken,
+        session: { familyId },
+      }),
+      findByToken: vi.fn(),
+      rotate: vi.fn().mockResolvedValue({
+        token: 'rotated-refresh-token',
+        session: { familyId },
+      }),
+      revokeFamily: vi.fn().mockResolvedValue(undefined),
+      revokeAllForUser: vi.fn().mockResolvedValue(undefined),
+    };
     authService = new AuthService(
       usersService as unknown as UsersService,
       jwtService as unknown as JwtService,
+      refreshTokenService as unknown as RefreshTokenService,
     );
   });
 
@@ -79,8 +107,10 @@ describe('AuthService', () => {
 
       expect(result).toEqual({
         accessToken: 'signed-token',
+        refreshToken,
         user: { id: userId, email, name },
       });
+      expect(refreshTokenService.issue).toHaveBeenCalledWith(userId);
       expect(usersService.create).toHaveBeenCalledWith(
         expect.objectContaining({
           email,
@@ -141,6 +171,7 @@ describe('AuthService', () => {
 
       expect(result).toEqual({
         accessToken: 'signed-token',
+        refreshToken,
         user: { id: userId, email, name },
       });
       expect(jwtService.signAsync).toHaveBeenCalledWith({
@@ -253,10 +284,81 @@ describe('AuthService', () => {
     });
   });
 
+  describe('refresh', () => {
+    const activeSession = {
+      userId: new Types.ObjectId(userId),
+      familyId,
+      revokedAt: null,
+      expiresAt: new Date(Date.now() + 60_000),
+    } as RefreshSessionDocument;
+
+    it('rotates the refresh token and returns a new access token', async () => {
+      refreshTokenService.findByToken.mockResolvedValue(activeSession);
+      usersService.findById.mockResolvedValue({
+        id: userId,
+        email,
+        name,
+        tokenVersion: 1,
+      } as UserDocument);
+
+      const result = await authService.refresh(refreshToken);
+
+      expect(refreshTokenService.rotate).toHaveBeenCalledWith(activeSession);
+      expect(result).toEqual({
+        accessToken: 'signed-token',
+        refreshToken: 'rotated-refresh-token',
+        user: { id: userId, email, name },
+      });
+    });
+
+    it('rejects a missing token', async () => {
+      await expect(authService.refresh(undefined)).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
+    });
+
+    it('rejects an unknown token', async () => {
+      refreshTokenService.findByToken.mockResolvedValue(null);
+
+      await expect(authService.refresh(refreshToken)).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
+    });
+
+    it('detects reuse and revokes the family plus bumps tokenVersion', async () => {
+      refreshTokenService.findByToken.mockResolvedValue({
+        ...activeSession,
+        revokedAt: new Date(),
+      } as RefreshSessionDocument);
+
+      await expect(authService.refresh(refreshToken)).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
+      expect(refreshTokenService.revokeFamily).toHaveBeenCalledWith(familyId);
+      expect(usersService.bumpTokenVersion).toHaveBeenCalledWith(userId);
+      expect(refreshTokenService.rotate).not.toHaveBeenCalled();
+    });
+
+    it('rejects an expired session', async () => {
+      refreshTokenService.findByToken.mockResolvedValue({
+        ...activeSession,
+        expiresAt: new Date(Date.now() - 1_000),
+      } as RefreshSessionDocument);
+
+      await expect(authService.refresh(refreshToken)).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
+      expect(refreshTokenService.rotate).not.toHaveBeenCalled();
+    });
+  });
+
   describe('logout', () => {
-    it('bumps the token version', async () => {
+    it('bumps the token version and revokes refresh sessions', async () => {
       await authService.logout(userId);
       expect(usersService.bumpTokenVersion).toHaveBeenCalledWith(userId);
+      expect(refreshTokenService.revokeAllForUser).toHaveBeenCalledWith(
+        userId,
+      );
     });
   });
 });

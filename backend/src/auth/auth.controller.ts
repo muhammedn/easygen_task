@@ -1,12 +1,13 @@
 import {
-  Body,
   Controller,
   Get,
   HttpCode,
   HttpStatus,
   Post,
+  Req,
   Res,
   UseGuards,
+  Body,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
@@ -22,9 +23,14 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import type { PublicUser } from '../users/types/public-user.js';
-import { clearAuthCookie, setAuthCookie } from './auth-cookie.js';
+import {
+  clearAuthCookies,
+  REFRESH_TOKEN_COOKIE,
+  setAuthCookie,
+  setRefreshCookie,
+} from './auth-cookie.js';
 import { AuthService } from './auth.service.js';
 import { CurrentUser } from './decorators/current-user.decorator.js';
 import { AuthResponseDto } from './dto/auth-response.dto.js';
@@ -54,6 +60,7 @@ export class AuthController {
   ): Promise<AuthResponseDto> {
     const result = await this.authService.signup(dto);
     setAuthCookie(res, result.accessToken, this.configService);
+    setRefreshCookie(res, result.refreshToken, this.configService);
     return { user: result.user };
   }
 
@@ -71,22 +78,51 @@ export class AuthController {
   ): Promise<AuthResponseDto> {
     const result = await this.authService.signin(dto);
     setAuthCookie(res, result.accessToken, this.configService);
+    setRefreshCookie(res, result.refreshToken, this.configService);
     return { user: result.user };
+  }
+
+  @Post('refresh')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  @ApiCookieAuth('refresh_token')
+  @ApiOperation({
+    summary: 'Rotate the refresh token and issue a new access token',
+  })
+  @ApiOkResponse({ type: AuthResponseDto })
+  @ApiUnauthorizedResponse({ description: 'Missing or invalid refresh token' })
+  @ApiTooManyRequestsResponse({ description: 'Rate limit exceeded' })
+  async refresh(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<AuthResponseDto> {
+    const cookies = req.cookies as Record<string, string> | undefined;
+    const rawToken = cookies?.[REFRESH_TOKEN_COOKIE];
+
+    try {
+      const result = await this.authService.refresh(rawToken);
+      setAuthCookie(res, result.accessToken, this.configService);
+      setRefreshCookie(res, result.refreshToken, this.configService);
+      return { user: result.user };
+    } catch (error) {
+      clearAuthCookies(res, this.configService);
+      throw error;
+    }
   }
 
   @Post('logout')
   @HttpCode(HttpStatus.NO_CONTENT)
   @UseGuards(JwtAuthGuard)
   @ApiCookieAuth('access_token')
-  @ApiOperation({ summary: 'Revoke the session and clear the auth cookie' })
-  @ApiNoContentResponse({ description: 'Cookie cleared and token revoked' })
+  @ApiOperation({ summary: 'Revoke the session and clear auth cookies' })
+  @ApiNoContentResponse({ description: 'Cookies cleared and tokens revoked' })
   @ApiUnauthorizedResponse({ description: 'Missing or invalid token' })
   async logout(
     @CurrentUser() user: PublicUser,
     @Res({ passthrough: true }) res: Response,
   ): Promise<void> {
     await this.authService.logout(user.id);
-    clearAuthCookie(res, this.configService);
+    clearAuthCookies(res, this.configService);
   }
 
   @Get('me')

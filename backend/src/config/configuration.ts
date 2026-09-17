@@ -4,6 +4,7 @@ export type AppConfig = {
   mongodbUri: string;
   jwtSecret: string;
   jwtExpiresIn: string;
+  refreshTokenExpiresIn: string;
   corsOrigin: string[];
   cookieSecure: boolean;
   trustProxy: boolean;
@@ -27,7 +28,8 @@ export default (): AppConfig => {
     port: Number(process.env.PORT ?? 3000),
     mongodbUri: process.env.MONGODB_URI as string,
     jwtSecret: process.env.JWT_SECRET as string,
-    jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? '1h',
+    jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? '15m',
+    refreshTokenExpiresIn: process.env.REFRESH_TOKEN_EXPIRES_IN ?? '7d',
     corsOrigin: (process.env.CORS_ORIGIN ?? 'http://localhost:5173')
       .split(',')
       .map((origin) => origin.trim())

@@ -7,7 +7,7 @@ import helmet from 'helmet';
 import { AppModule } from './app.module.js';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter.js';
 import type { AppConfig } from './config/configuration.js';
-import { ACCESS_TOKEN_COOKIE } from './auth/auth-cookie.js';
+import { ACCESS_TOKEN_COOKIE, REFRESH_TOKEN_COOKIE } from './auth/auth-cookie.js';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -59,7 +59,8 @@ async function bootstrap() {
     .setTitle('Auth API')
     .setDescription('Sign up, sign in, and protected user endpoints')
     .setVersion('1.0')
-    .addCookieAuth(ACCESS_TOKEN_COOKIE);
+    .addCookieAuth(ACCESS_TOKEN_COOKIE)
+    .addCookieAuth(REFRESH_TOKEN_COOKIE, { type: 'apiKey', in: 'cookie' }, 'refresh_token');
 
   if (nodeEnv === 'production') {
     swaggerBuilder.addServer('/api');

@@ -11,7 +11,7 @@ services:
     volumes:
       - mongo_data:/data/db
     healthcheck:
-      test: ['CMD', 'mongosh', '--eval', "db.adminCommand('ping')"]
+      test: ['CMD', 'mongosh', '--quiet', '--eval', "db.adminCommand('ping')"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -29,7 +29,8 @@ services:
       PORT: 3000
       MONGODB_URI: mongodb://${MONGO_USER:-easygen}:${MONGO_PASSWORD:-local-dev-only-mongo-password}@mongo:27017/easygen?authSource=admin
       JWT_SECRET: ${JWT_SECRET:-local-dev-only-secret-change-me-32chars!!}
-      JWT_EXPIRES_IN: 1h
+      JWT_EXPIRES_IN: 15m
+      REFRESH_TOKEN_EXPIRES_IN: 7d
       CORS_ORIGIN: http://localhost:8080
       COOKIE_SECURE: 'false'
       TRUST_PROXY: 'true'

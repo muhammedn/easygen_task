@@ -7,7 +7,7 @@ import { Model } from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { ACCESS_TOKEN_COOKIE } from '../src/auth/auth-cookie.js';
+import { ACCESS_TOKEN_COOKIE, REFRESH_TOKEN_COOKIE } from '../src/auth/auth-cookie.js';
 import { HttpExceptionFilter } from '../src/common/filters/http-exception.filter.js';
 import {
   NAME_MAX_LENGTH,
@@ -18,7 +18,6 @@ import {
   User,
   type UserDocument,
 } from '../src/users/schemas/user.schema.js';
-
 function getSetCookieHeader(res: request.Response): string {
   const raw = res.headers['set-cookie'];
   if (Array.isArray(raw)) {
@@ -27,12 +26,15 @@ function getSetCookieHeader(res: request.Response): string {
   return typeof raw === 'string' ? raw : '';
 }
 
-function cookieHeaderFromSetCookie(setCookie: string): string {
+function cookieHeaderFromSetCookie(
+  setCookie: string,
+  cookieName: string = ACCESS_TOKEN_COOKIE,
+): string {
   const cookieValue = setCookie
     .split(',')
     .flatMap((part) => part.split(';'))
     .map((part) => part.trim())
-    .find((part) => part.startsWith(`${ACCESS_TOKEN_COOKIE}=`));
+    .find((part) => part.startsWith(`${cookieName}=`));
 
   expect(cookieValue).toBeDefined();
   return cookieValue as string;
@@ -53,7 +55,8 @@ describe('Auth (e2e)', () => {
     process.env.PORT = '3001';
     process.env.MONGODB_URI = mongoServer.getUri();
     process.env.JWT_SECRET = 'test-jwt-secret-at-least-32-chars!!';
-    process.env.JWT_EXPIRES_IN = '1h';
+    process.env.JWT_EXPIRES_IN = '15m';
+    process.env.REFRESH_TOKEN_EXPIRES_IN = '7d';
     process.env.CORS_ORIGIN = 'http://localhost:5173';
     process.env.COOKIE_SECURE = 'false';
     process.env.TRUST_PROXY = 'false';
@@ -124,9 +127,11 @@ describe('Auth (e2e)', () => {
 
     const setCookie = getSetCookieHeader(signinRes);
     expect(setCookie).toContain(`${ACCESS_TOKEN_COOKIE}=`);
+    expect(setCookie).toContain(`${REFRESH_TOKEN_COOKIE}=`);
     expect(setCookie.toLowerCase()).toContain('httponly');
     expect(setCookie.toLowerCase()).toContain('samesite=strict');
     expect(setCookie.toLowerCase()).not.toContain('secure');
+    expect(setCookie.toLowerCase()).toMatch(/path=\/auth\/refresh/i);
 
     const cookieValue = cookieHeaderFromSetCookie(setCookie);
 
@@ -312,5 +317,93 @@ describe('Auth (e2e)', () => {
       .expect(200);
 
     expect(unlocked.body.user.email).toBe(lockEmail);
+  });
+
+  it('POST /auth/refresh without a cookie returns 401', async () => {
+    await request(app.getHttpServer()).post('/auth/refresh').expect(401);
+  });
+
+  it('rotates refresh tokens and rejects reuse of the old token', async () => {
+    const refreshEmail = `refresh_${Date.now()}@example.com`;
+    await request(app.getHttpServer())
+      .post('/auth/signup')
+      .send({ email: refreshEmail, name, password })
+      .expect(201);
+
+    const signinRes = await request(app.getHttpServer())
+      .post('/auth/signin')
+      .send({ email: refreshEmail, password })
+      .expect(200);
+
+    const setCookie = getSetCookieHeader(signinRes);
+    const oldRefresh = cookieHeaderFromSetCookie(
+      setCookie,
+      REFRESH_TOKEN_COOKIE,
+    );
+
+    const refreshRes = await request(app.getHttpServer())
+      .post('/auth/refresh')
+      .set('Cookie', oldRefresh)
+      .expect(200);
+
+    expect(refreshRes.body.user.email).toBe(refreshEmail);
+    const rotatedCookies = getSetCookieHeader(refreshRes);
+    expect(rotatedCookies).toContain(`${ACCESS_TOKEN_COOKIE}=`);
+    expect(rotatedCookies).toContain(`${REFRESH_TOKEN_COOKIE}=`);
+
+    const newRefresh = cookieHeaderFromSetCookie(
+      rotatedCookies,
+      REFRESH_TOKEN_COOKIE,
+    );
+    const newAccess = cookieHeaderFromSetCookie(rotatedCookies);
+
+    await request(app.getHttpServer())
+      .get('/auth/me')
+      .set('Cookie', newAccess)
+      .expect(200);
+
+    await request(app.getHttpServer())
+      .post('/auth/refresh')
+      .set('Cookie', oldRefresh)
+      .expect(401);
+
+    await request(app.getHttpServer())
+      .post('/auth/refresh')
+      .set('Cookie', newRefresh)
+      .expect(401);
+  });
+
+  it('logout clears both cookies and blocks later refresh', async () => {
+    const logoutEmail = `logout_refresh_${Date.now()}@example.com`;
+    await request(app.getHttpServer())
+      .post('/auth/signup')
+      .send({ email: logoutEmail, name, password })
+      .expect(201);
+
+    const signinRes = await request(app.getHttpServer())
+      .post('/auth/signin')
+      .send({ email: logoutEmail, password })
+      .expect(200);
+
+    const setCookie = getSetCookieHeader(signinRes);
+    const accessCookie = cookieHeaderFromSetCookie(setCookie);
+    const refreshCookie = cookieHeaderFromSetCookie(
+      setCookie,
+      REFRESH_TOKEN_COOKIE,
+    );
+
+    const logoutRes = await request(app.getHttpServer())
+      .post('/auth/logout')
+      .set('Cookie', accessCookie)
+      .expect(204);
+
+    const cleared = getSetCookieHeader(logoutRes);
+    expect(cleared).toContain(`${ACCESS_TOKEN_COOKIE}=`);
+    expect(cleared).toContain(`${REFRESH_TOKEN_COOKIE}=`);
+
+    await request(app.getHttpServer())
+      .post('/auth/refresh')
+      .set('Cookie', refreshCookie)
+      .expect(401);
   });
 });

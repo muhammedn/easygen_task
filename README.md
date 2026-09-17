@@ -64,11 +64,21 @@ npm run dev
 | http://localhost:3000 | API |
 | http://localhost:3000/docs | Swagger UI |
 
-Useful scripts: `npm run test` / `npm run test:e2e` / `npm run lint` in `backend/`.
+Useful scripts: `npm run test` / `npm run test:e2e` / `npm run lint` in `backend/`; `npm run test` / `npm run lint` / `npm run build` in `frontend/`.
+
+## Session model
+
+- **Access token**: short-lived JWT in an `access_token` httpOnly cookie (default **15 minutes**, `JWT_EXPIRES_IN`). Never returned in JSON.
+- **Refresh token**: opaque random value in a `refresh_token` httpOnly cookie scoped to `/auth/refresh` (default **7 days**, `REFRESH_TOKEN_EXPIRES_IN`). Stored hashed (SHA-256) in Mongo with a session family id.
+- **Rotation**: `POST /auth/refresh` revokes the presented session and issues a new refresh token in the same family, plus a new access token.
+- **Reuse detection**: presenting an already-rotated refresh token revokes the whole family and bumps `tokenVersion` (invalidates all access tokens).
+- **Logout**: bumps `tokenVersion`, deletes all refresh sessions for the user, clears both cookies (logout everywhere).
+
+Behind nginx the refresh cookie path is rewritten to `/api/auth/refresh` so the browser still sends it.
 
 ## Security notes
 
-- JWT is cookie-only (`httpOnly`, `SameSite=Strict`); it is never returned in JSON bodies
+- JWT access token is cookie-only (`httpOnly`, `SameSite=Strict`); it is never returned in JSON bodies
 - Account lockout after 5 failed sign-ins (15 minutes); logout bumps `tokenVersion` so existing cookies stop working
 - Per-IP rate limiting is in-memory (fine for a single API instance; use a Redis store for multi-instance)
 - Mongo requires authentication inside the compose network
